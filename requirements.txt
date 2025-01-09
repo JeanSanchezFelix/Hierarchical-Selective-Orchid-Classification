@@ -1,3 +1,4 @@
 python_version==3.12
+tqdm==4.67.1
 # numpy==2.2.1
 matplotlib==3.10.0
