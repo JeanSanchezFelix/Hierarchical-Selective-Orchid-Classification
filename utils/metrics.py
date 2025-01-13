@@ -3,11 +3,8 @@ import seaborn as sns
 import numpy as np
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, roc_auc_score, confusion_matrix
 
-# TODO: TEST IF IT WORKS
-
 # Use a colorblind-friendly palette
 sns.set_palette("colorblind")
-plt.style.use('seaborn-colorblind')
 
 def calculate_metrics(y_true, y_pred, y_proba=None):
     """
@@ -40,7 +37,7 @@ def calculate_metrics(y_true, y_pred, y_proba=None):
     # Compute AUC-Score
     if y_proba is not None:
         if is_binary:
-            metrics["AUC-Score"] = roc_auc_score(y_true, y_proba)
+            metrics["AUC-Score"] = roc_auc_score(y_true, y_proba[:, 1])
         else:
             # Multiclass AUC-Score (requires one-vs-rest probabilities)
             metrics["AUC-Score"] = roc_auc_score(y_true, y_proba, multi_class='ovr', average='macro')
@@ -59,21 +56,43 @@ def plot_metric_bar(metrics: dict, title: str = "Performance Metrics", save_path
         title (str): Title of the plot.
         save_path (str): Optional path to save the plot.
     """
-    plt.figure(figsize=(10, 6))
+    # Filter out non-scalar metrics (e.g., confusion matrix)
+    metrics = {k: v for k, v in metrics.items() if np.isscalar(v)}
+    
+    # If no valid metrics remain, raise an error
+    if not metrics:
+        raise ValueError("No valid scalar metrics to plot.")
+
+    # Extract keys and values for plotting
     metric_names = list(metrics.keys())
     metric_values = list(metrics.values())
 
     # Bar plot
-    sns.barplot(x=metric_values, y=metric_names)
-    plt.xlabel("Score")
-    plt.ylabel("Metrics")
+    plt.figure(figsize=(10, 6))
+    color_palette = sns.color_palette("Blues", len(metric_names))  # Different shades of blue
+    sns.barplot(x=metric_names, y=metric_values, palette=color_palette, hue=metric_names, legend=False)
+
+    # Add value labels on top of each bar
+    for i, value in enumerate(metric_values):
+        plt.text(
+            i,               # Position on the X-axis (center of the bar)
+            value + 0.01,    # Slightly above the bar
+            f"{value:.2f}",  # Format the value
+            ha='center',     # Align horizontally to the center of the bar
+            color='black', fontsize=10
+        )
+
+    # Customize the X-axis and Y-axis
+    plt.xlabel("Metrics")
+    plt.ylabel("Score")
     plt.title(title)
-    plt.xlim(0, 1)  # Most metrics are within this range
+    plt.ylim(0, 1)  # Most metrics are within this range
+    plt.yticks(np.arange(0, 1.1, 0.1))  # Increment Y-axis ticks by 0.1
 
     # Save or show plot
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
-    plt.show()
+    # plt.show()
 
 
 def plot_confusion_matrix(conf_matrix, labels=None, title: str = "Confusion Matrix", save_path: str = None):
@@ -95,27 +114,27 @@ def plot_confusion_matrix(conf_matrix, labels=None, title: str = "Confusion Matr
     # Save or show plot
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
-    plt.show()
+    # plt.show()
 
 
-def plot_train_val_curve(train_metrics: list, val_metrics: list, metric_name: str = "Accuracy", 
+def plot_train_val_curve(metrics: dict, metric_name: str = "Loss", 
                          title: str = "Training vs Validation", save_path: str = None):
     """
     Plots training and validation metrics over epochs.
     
     Args:
-        train_metrics (list): Training metric values per epoch.
-        val_metrics (list): Validation metric values per epoch.
+        metrics (dict): Dictionary of training and validation metric values per epoch.
         metric_name (str): Name of the metric being plotted.
         title (str): Title of the plot.
         save_path (str): Optional path to save the plot.
     """
+    
     plt.figure(figsize=(10, 6))
-    epochs = range(1, len(train_metrics) + 1)
+    epochs = range(1, len(metrics['train']) + 1)
 
     # Line plot for training and validation
-    plt.plot(epochs, train_metrics, label=f"Training {metric_name}", color='blue')
-    plt.plot(epochs, val_metrics, label=f"Validation {metric_name}", color='orange')
+    plt.plot(epochs, metrics['train'], label=f"Training {metric_name}", color='blue')
+    plt.plot(epochs, metrics['val'], label=f"Validation {metric_name}", color='orange')
     plt.xlabel("Epochs")
     plt.ylabel(metric_name)
     plt.title(title)
@@ -124,20 +143,27 @@ def plot_train_val_curve(train_metrics: list, val_metrics: list, metric_name: st
     # Save or show plot
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
-    plt.show()
+    # plt.show()
 
 def plot_radar_chart(metrics, title="Radar Chart for Metrics", save_path=None):
     """
     Generates a radar plot based on metrics.
 
     Args:
-        metrics (dict): Dictionary of metric names and their values (excluding Confusion Matrix).
+        metrics (dict): Dictionary of metric names and their scalar values (excluding Confusion Matrix).
         title (str): Title of the plot.
         save_path (str): Optional path to save the plot.
     """
-    # Exclude Confusion Matrix and prepare data
-    metric_names = [key for key in metrics.keys() if key != "Confusion Matrix"]
-    metric_values = [metrics[key] for key in metric_names]
+    # Filter out non-scalar metrics (e.g., confusion matrix)
+    metrics = {k: v for k, v in metrics.items() if np.isscalar(v)}
+    
+    # If no valid metrics remain, raise an error
+    if not metrics:
+        raise ValueError("No valid scalar metrics to plot.")
+    
+    # Extract keys and values for plotting
+    metric_names = list(metrics.keys())
+    metric_values = list(metrics.values())
 
     # Radar plot requires a closed loop
     metric_names.append(metric_names[0])
@@ -152,13 +178,20 @@ def plot_radar_chart(metrics, title="Radar Chart for Metrics", save_path=None):
     ax.plot(angles, metric_values, color='blue', linewidth=2)
 
     # Add labels and title
-    ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
-    ax.set_yticklabels(["0.2", "0.4", "0.6", "0.8", "1.0"], color='gray')
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(metric_names, fontsize=10)
-    ax.set_title(title, size=16)
+    ax.set_yticks(np.arange(0.1, 1.1, 0.1))  # Y-axis increments by 0.1
+    ax.set_yticklabels([f"{v:.1f}" for v in np.arange(0.1, 1.1, 0.1)], color='gray')
+    ax.set_xticks(angles)  # Use all angles, including the closing one
+    ax.set_xticklabels(metric_names, fontsize=10, rotation=30, ha='right')  # Rotate labels for better alignment
+    ax.set_rlabel_position(180 / len(metric_names))  # Offset radial labels slightly
+
+    # Add title with padding
+    ax.set_title(title, size=16, pad=30)
+
+    # Adjust layout to avoid title overlap
+    plt.subplots_adjust(top=0.85)
 
     # Save or show the plot
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
-    plt.show()
+    # plt.show()
+
