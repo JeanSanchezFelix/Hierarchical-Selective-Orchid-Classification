@@ -98,7 +98,7 @@ def train_models(
     logging.info("Datasets loaded successfully.")
     num_classes = train_loader.dataset.classes
 
-    model, criterion, optimizer = model_setup(model_name, learning_rate, optimizer, criterion, pretrained_weights, num_classes)
+    model, criterion, optimizer = model_setup(model_name, learning_rate, criterion, optimizer, pretrained_weights, num_classes)
 
     # Load weights if a path is provided
     if pretrained_weights:
@@ -200,7 +200,7 @@ def train_models(
     model.load_state_dict(torch.load(best_model_path, weights_only=False))
     logging.info(f"Best model weights loaded from: {best_model_path}")
 
-    plot_train_val_curve(loss_dict, save_path=save_dir)
+    plot_train_val_curve(loss_dict, save_path=os.path.join(save_dir, "curve.png"))
     test_inference(model, test_loader, device, save_dir)
 
     return model
