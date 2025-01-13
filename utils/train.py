@@ -1,15 +1,14 @@
 import os
 import time
 import logging
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-from torch.optim import Adam, SGD
-from torchvision import models
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from typing import Dict
 from utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_radar_chart, plot_train_val_curve
+from utils.setup import model_setup
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -72,11 +71,13 @@ def train_models(
     save_dir: str,
     learning_rate: float = 0.001,
     epochs: int = 5,
+    criterion: str = "cross_entropy",
     optimizer: str = "adam",
+    pretrained_weights: str = None,
     freeze_base: bool = True
 ):
     """
-    Train a model using transfer learning with checkpointing and logging.
+    Train a model using transfer learning 
 
     Parameters:
         model_name (str): Name of the pre-trained model to use (e.g., 'resnet18', 'mobilenet_v2').
@@ -84,8 +85,10 @@ def train_models(
         save_dir (str): Directory to save the trained model and checkpoints.
         learning_rate (float): Learning rate for the optimizer.
         epochs (int): Number of training epochs.
-        optimizer (str): Optimizer to use ('adam' or 'sgd').
+        criterion (str): Criterion to use (e.g., 'cross_entropy', 'bce').
+        optimizer (str): Optimizer to use (e.g., 'adam', 'sgd').
         freeze_base (bool): Whether to freeze the base model layers.
+        pretrained_weights (str): Path to existing weights for further training. Defaults to None.
     """
     # Load dataset
     logging.info("Loading datasets...")
@@ -93,20 +96,18 @@ def train_models(
     val_loader = data_loaders["val"]
     test_loader = data_loaders["test"]
     logging.info("Datasets loaded successfully.")
-    
-    # Select pre-trained model
-    logging.info(f"Initializing pre-trained model: {model_name}")
-    if model_name.lower() == "mobilenet_v2":
-        model = models.mobilenet_v2(weights='DEFAULT')
-        num_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(num_features, len(train_loader.dataset.classes))
-    elif model_name.lower() == "resnet18":
-        model = models.resnet18(weights='DEFAULT')
-        num_features = model.fc.in_features
-        model.fc = nn.Linear(num_features, len(train_loader.dataset.classes))
-    else:
-        logging.error(f"Unsupported model: {model_name}")
-        raise ValueError(f"Unsupported model: {model_name}")
+    num_classes = train_loader.dataset.classes
+
+    model, criterion, optimizer = model_setup(model_name, learning_rate, optimizer, criterion, pretrained_weights, num_classes)
+
+    # Load weights if a path is provided
+    if pretrained_weights:
+        if os.path.exists(pretrained_weights):
+            model.load_state_dict(torch.load(pretrained_weights))
+            logging.info(f"Pre-trained weights loaded from: {pretrained_weights}")
+        else:
+            logging.error(f"Pre-trained weights path does not exist: {pretrained_weights}")
+            raise FileNotFoundError(f"File not found: {pretrained_weights}")
 
     # Freeze base layers if specified
     if freeze_base:
@@ -124,12 +125,6 @@ def train_models(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     logging.info(f"Model moved to device: {device}")
-
-    # Define loss function and optimizer
-    criterion = nn.CrossEntropyLoss()
-    optimizer = Adam(model.parameters(), lr=learning_rate) if optimizer.lower() == "adam" else SGD(
-        model.parameters(), lr=learning_rate, momentum=0.9
-    )
 
     # Initialize variables for checkpointing
     best_acc = 0.0
