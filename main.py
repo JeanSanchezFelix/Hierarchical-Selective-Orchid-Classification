@@ -33,7 +33,9 @@ def main():
         save_dir=args['SAVE_DIR'],
         learning_rate=args['LEARNING_RATE'],
         epochs=args['EPOCHS'],
-        optimizer=args['OPTIMIZER']
+        optimizer=args['OPTIMIZER'],
+        criterion=args['CRITERION'],
+        pretrained_weights=args['PRETRAINED_WEIGHTS']
     )
 
     logging.info("Training completed successfully.")

@@ -60,12 +60,15 @@ def parse():
     parser.add_argument('--epochs', type=int, help='Number of epochs to train each model')
     parser.add_argument('--dataset_dir', type=str, help='Directory where the dataset is located')
     parser.add_argument('--batch_size', type=int, help='Batch size for training')
+    parser.add_argument('--criterion', type=str, choices=["cross_entropy", "mse", "l1", "nll", "bce", "bce_with_logits"], 
+                        help='Optimizer to use')
     parser.add_argument('--learning_rate', type=float, help='Learning rate for the optimizer')
-    parser.add_argument('--optimizer', type=str, choices=["adam", "sgd"], help='Optimizer to use: adam or sgd')
+    parser.add_argument('--optimizer', type=str, choices=["adam", "sgd", "rmsprop", "adagrad", "adamw"], help='Optimizer to use')
     parser.add_argument('--train_split', type=float, help='Percentage of training split (0.0-1.0)')
     parser.add_argument('--test_split', type=float, help='Percentage of test split (0.0-1.0)')
     parser.add_argument('--img_size', type=int, help='Image size (e.g., 224 for 224x224 images)')
     parser.add_argument('--data_augmentation', type=int, choices=[0, 1], help='Enable data augmentation: 0 (False), 1 (True)')
+    parser.add_argument('--pretrained_weights', type=str, help='Path to pretrained weights')
     parser.add_argument('--save_dir', type=str, help='Directory to save the models')
 
     # Parse command-line arguments
@@ -87,11 +90,13 @@ def parse():
     DATASET_DIR = get_arg_value('dataset_dir', None)
     BATCH_SIZE = int(get_arg_value('batch_size', 32))
     LEARNING_RATE = float(get_arg_value('learning_rate', 0.001))
+    CRITERION = get_arg_value('criterion', 'cross_entropy')
     OPTIMIZER = get_arg_value('optimizer', 'adam')
     TRAIN_SPLIT = float(get_arg_value('train_split', 0.8))
     TEST_SPLIT = float(get_arg_value('test_split', 0.1))
     IMG_SIZE = int(get_arg_value('img_size', 224))
     DATA_AUGMENTATION = bool(int(get_arg_value('data_augmentation', 0)))
+    PRETRAINED_WEIGHTS = get_arg_value('pretrained_weights', None)
     SAVE_DIR = get_arg_value('save_dir', 'saved_models')
 
     # Argument Validation
@@ -105,14 +110,14 @@ def parse():
         raise ValueError("The learning rate (--learning_rate) must be a positive number.")
     if not DATASET_DIR or not os.path.exists(DATASET_DIR):
         raise ValueError(f"The specified dataset directory ({DATASET_DIR}) does not exist.")
-    if OPTIMIZER not in ['adam', 'sgd']:
-        raise ValueError(f"Unsupported optimizer: {OPTIMIZER}. Choose from 'adam' or 'sgd'.")
     if not (0.0 < TRAIN_SPLIT <= 1.0):
         raise ValueError("The training split (--train_split) must be between 0.0 and 1.0.")
     if not (0.0 <= TEST_SPLIT < 1.0):
         raise ValueError("The test split (--test_split) must be between 0.0 and 1.0.")
     if TRAIN_SPLIT + TEST_SPLIT >= 1.0:
         raise ValueError("The sum of train_split and test_split must be less than 1.0.")
+    if PRETRAINED_WEIGHTS and not os.path.exists(DATASET_DIR):
+        raise ValueError(f"The specified pretrained weights ({PRETRAINED_WEIGHTS}) do not exist.")
     if IMG_SIZE <= 0:
         raise ValueError("The image size (--img_size) must be a positive integer.")
 
@@ -127,11 +132,13 @@ def parse():
     logging.info(f"DATASET_DIR: {DATASET_DIR}")
     logging.info(f"BATCH_SIZE: {BATCH_SIZE}")
     logging.info(f"LEARNING_RATE: {LEARNING_RATE}")
+    logging.info(f"CRITERION: {CRITERION}")
     logging.info(f"OPTIMIZER: {OPTIMIZER}")
     logging.info(f"TRAIN_SPLIT: {TRAIN_SPLIT}")
     logging.info(f"TEST_SPLIT: {TEST_SPLIT}")
     logging.info(f"IMG_SIZE: {IMG_SIZE}")
     logging.info(f"DATA_AUGMENTATION: {DATA_AUGMENTATION}")
+    logging.info(f"PRETRAINED_WEIGHTS: {PRETRAINED_WEIGHTS}")
     logging.info(f"SAVE_DIR: {SAVE_DIR}")
 
     return {
@@ -141,11 +148,13 @@ def parse():
         "DATASET_DIR": DATASET_DIR,
         "BATCH_SIZE": BATCH_SIZE,
         "LEARNING_RATE": LEARNING_RATE,
+        "CRITERION": CRITERION,
         "OPTIMIZER": OPTIMIZER,
         "TRAIN_SPLIT": TRAIN_SPLIT,
         "TEST_SPLIT": TEST_SPLIT,
         "IMG_SIZE": IMG_SIZE,
         "DATA_AUGMENTATION": DATA_AUGMENTATION,
+        "PRETRAINED_WEIGHTS": PRETRAINED_WEIGHTS,
         "SAVE_DIR": SAVE_DIR
     }
 
