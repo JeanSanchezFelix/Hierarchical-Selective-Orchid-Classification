@@ -3,21 +3,75 @@ import time
 import logging
 import torch
 import torch.nn as nn
+import numpy as np
 from torch.optim import Adam, SGD
 from torchvision import models
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from typing import Dict
+from utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_radar_chart, plot_train_val_curve
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.device, save_dir: str):
+    """
+    Perform inference on the test dataset.
+
+    Parameters:
+        model (nn.Module): The trained model.
+        test_loader (DataLoader): DataLoader for the test dataset.
+        device (torch.device): Device to perform inference on (CPU or GPU).
+        save_dir (str): Directory to save plots. If None, plots will not be saved.
+    """
+    logging.info("Starting inference on the test dataset...")
+    
+    model.eval()  # Set the model to evaluation mode
+    predictions, ground_truths, probabilities = [], [], []
+    class_labels = test_loader.dataset.classes
+
+    with torch.no_grad():  # Disable gradient computation
+        for inputs, labels in tqdm(test_loader, desc="Inference Progress"):
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            _, preds = torch.max(outputs, 1)
+            probs = torch.nn.functional.softmax(outputs, dim=1)
+
+            predictions.extend(preds.cpu().numpy())
+            ground_truths.extend(labels.cpu().numpy())
+            probabilities.extend(probs.cpu().numpy())
+    
+    logging.info("Inference complete.")
+    
+    # Calculate metrics
+    y_true = np.array(ground_truths)
+    y_pred = np.array(predictions)
+    y_proba = np.array(probabilities) if probabilities else None
+
+    metrics = calculate_metrics(y_true, y_pred, y_proba)
+
+    # Generate and save plots if `save_dir` is specified
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        plot_metric_bar(metrics, save_path=os.path.join(save_dir, "metrics_bar_chart.png"))
+        plot_confusion_matrix(
+            metrics["Confusion Matrix"],
+            labels=class_labels,
+            save_path=os.path.join(save_dir, "confusion_matrix.png")
+        )
+        plot_radar_chart(
+            {k: v for k, v in metrics.items() if k != "Confusion Matrix"},
+            save_path=os.path.join(save_dir, "radar_chart.png")
+        )
+        logging.info(f"Plots saved to {save_dir}")
+
 
 def train_models(
     model_name: str,
     data_loaders: Dict[str, DataLoader],
     save_dir: str,
     learning_rate: float = 0.001,
-    epochs: int = 10,
+    epochs: int = 5,
     optimizer: str = "adam",
     freeze_base: bool = True
 ):
@@ -37,6 +91,7 @@ def train_models(
     logging.info("Loading datasets...")
     train_loader = data_loaders["train"]
     val_loader = data_loaders["val"]
+    test_loader = data_loaders["test"]
     logging.info("Datasets loaded successfully.")
     
     # Select pre-trained model
@@ -78,6 +133,9 @@ def train_models(
 
     # Initialize variables for checkpointing
     best_acc = 0.0
+    training_loss = []
+    validation_loss = []
+    loss_dict = {'train': training_loss, 'val': validation_loss}
     best_model_path = os.path.join(save_dir, f"{model_name}_best.pth")
     os.makedirs(save_dir, exist_ok=True)
     logging.info(f"Training will save checkpoints to: {save_dir}")
@@ -130,6 +188,7 @@ def train_models(
             epoch_loss = running_loss / len(data_loader.dataset)
             epoch_acc = correct / total
 
+            loss_dict[phase].append(epoch_loss)
             logging.info(f"{phase.capitalize()} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}")
 
             # Checkpoint for the best model
@@ -143,8 +202,12 @@ def train_models(
     logging.info(f"Best validation accuracy: {best_acc:.4f}")
 
     # Load the best model weights before returning
-    model.load_state_dict(torch.load(best_model_path))
+    model.load_state_dict(torch.load(best_model_path, weights_only=False))
     logging.info(f"Best model weights loaded from: {best_model_path}")
+
+    plot_train_val_curve(loss_dict, save_path=save_dir)
+    test_inference(model, test_loader, device, save_dir)
+
     return model
 
 
