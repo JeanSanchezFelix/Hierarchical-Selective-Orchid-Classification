@@ -1,7 +1,7 @@
 import logging
 from utils.parsing import parse
 from utils.preprocessing import load_data
-from utils.train import train_models  
+from train.train import train_models  
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

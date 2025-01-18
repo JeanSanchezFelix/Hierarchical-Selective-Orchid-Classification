@@ -7,18 +7,19 @@ The `utils` folder contains essential modules that support the functionality of 
 ## Folder Structure
 ```
 utils/
-├── callbacks.py
+├── callbacks.py 
 ├── eval.py
 ├── metrics.py
 ├── parsing.py
 ├── preprocessing.py
+├── setup.py
 ├── train.py
 ```
 
 ### Overview
-1. **`callbacks.py`**: TODO
+1. **`callbacks.py`**: Contains regularization techniques for the training process (eg. EarlyStopping, etc.)
 2. **`eval.py`**: TODO
-3. **`metrics.py`**: TODO
+3. **`metrics.py`**: Contains functions for plotting the performance results
 4. **`parsing.py`**: Handles command-line argument parsing and configuration management.
 5. **`preprocessing.py`**: Manages data loading, preprocessing, and augmentation.
 6. **`train.py`**: Implements the training process, including checkpointing and performance evaluation.
@@ -26,6 +27,43 @@ utils/
 ---
 
 ## Script Details
+
+### `callbacks.py`
+#### Purpose
+- Contains regularization techniques that prevent overfitting and bias in training
+- Some of the techniques include earlystopping, etc.
+
+#### Key Classes
+1. **`EarlyStopping`**:
+- 
+
+#### Usage
+
+---
+
+### `eval.py`
+#### Purpose
+- 
+
+#### Key Functions
+1. 
+- 
+
+#### Usage
+
+---
+
+### `metrics.py`
+#### Purpose
+- 
+
+#### Key Functions
+1. 
+- 
+
+#### Usage
+
+---
 
 ### `parsing.py`
 #### Purpose
@@ -68,6 +106,18 @@ Used by `main.py` to parse and validate user-provided arguments or configuration
 
 #### Usage
 Used by `main.py` to load and preprocess data before training.
+
+---
+
+### `eval.py`
+#### Purpose
+- 
+
+#### Key Functions
+1. 
+- 
+
+#### Usage
 
 ---
 
