@@ -35,8 +35,8 @@ if [ ! -f $COMPRESSED_FILE ]; then
 	fi
 
 	# Move kaggle.json to the .kaggle directory
-	echo "Moving kaggle.json to $KAGGLE_DIR..."
-	mv ../kaggle.json "$KAGGLE_DIR/"
+	echo "Copying kaggle.json to $KAGGLE_DIR..."
+	cp ../kaggle.json "$KAGGLE_DIR/"
 
 	# Set permissions for kaggle.json
 	echo "Setting permissions for kaggle.json..."
