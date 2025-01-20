@@ -5,9 +5,6 @@ from typing import Tuple, Dict
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 def log_dataset_statistics(dataset, dataset_name: str):
     """
     Logs the size and class distribution of a dataset.

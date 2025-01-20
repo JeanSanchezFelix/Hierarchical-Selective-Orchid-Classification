@@ -3,9 +3,6 @@ from utils.parsing import parse
 from utils.preprocessing import load_data
 from train.train import train_models  
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 def main():
     """
     Main function for parsing, data preprocessing, and model training.
@@ -35,6 +32,7 @@ def main():
         epochs=args['EPOCHS'],
         optimizer=args['OPTIMIZER'],
         criterion=args['CRITERION'],
+        callbacks=args['CALLBACKS'],
         pretrained_weights=args['PRETRAINED_WEIGHTS']
     )
 

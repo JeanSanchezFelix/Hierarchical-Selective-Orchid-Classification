@@ -3,9 +3,6 @@ import torch.nn as nn
 from torch.optim import Adam, SGD, RMSprop, Adagrad, AdamW
 from torchvision import models
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 def setup_model(model_name, pretrained_weights, num_classes):
     """
     Set up a pre-trained model with a customized classification head.

@@ -10,11 +10,8 @@ from typing import Dict
 from utils.metrics import plot_train_val_curve, calculate_metrics
 from utils.setup import model_setup
 from utils.eval import test_inference
-from utils.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+# from utils.callbacks.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 # from utils.earlystop import EarlyStopping
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def train_models(
     model_name: str,
@@ -24,6 +21,7 @@ def train_models(
     epochs: int = 5,
     criterion: str = "cross_entropy",
     optimizer: str = "adam",
+    callbacks: list = None,
     pretrained_weights: str = None,
     freeze_base: bool = True
 ):
@@ -81,12 +79,6 @@ def train_models(
     best_model_path = os.path.join(save_dir, f"{model_name}_best.pth")
     os.makedirs(save_dir, exist_ok=True)
     logging.info(f"Training will save checkpoints to: {save_dir}")
-
-    callbacks = [
-        # EarlyStopping(monitor='val_loss', patience=1, mode='max', save_path='best_model.pth', verbose=True),
-        # ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=1, mode='max', min_lr=1e-6, verbose=True),
-        ModelCheckpoint(monitor='val_loss', save_best_only=True, mode='min', filepath='checkpoint_model.pth', verbose=True),
-    ]
 
     for callback in callbacks:
         callback.on_train_start(logs={})
@@ -198,7 +190,7 @@ def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, ep
             logging.info(f"{phase.capitalize()} Metrics: " + ", ".join([f"{key}: {value:.4g}" for key, value in metrics.items()]))
             logs.update({f"{phase}_loss": epoch_loss, **metrics})
 
-            # TODO: change parsing to handle callbacks. Right now the callbacks only accept logs for loss, leverage for other metrics
+            # TODO: Log info level 3 and up to text file
             # Checkpoint for the best model
             # if phase == 'val' and metrics['Accuracy'] > best_acc:
             #     best_acc = metrics['Accuracy']
