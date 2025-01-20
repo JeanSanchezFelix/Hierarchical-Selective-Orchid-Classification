@@ -6,7 +6,7 @@ from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_sc
 # Use a colorblind-friendly palette
 sns.set_palette("colorblind")
 
-def calculate_metrics(y_true, y_pred, y_proba=None):
+def calculate_metrics(y_true, y_pred, y_proba=None) -> dict[str,float]:
     """
     Calculates classification metrics, supporting both binary and multiclass classification.
 

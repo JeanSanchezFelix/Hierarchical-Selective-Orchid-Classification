@@ -75,7 +75,7 @@ def process_callbacks(callback_names: list, save_dir: str) -> list[Callback]:
     return callbacks
 
 # Function to load arguments from a config file (.csv)
-def load_args_from_file(file_path):
+def load_args_from_file(file_path: str) -> dict[str,str]:
     """
     Reads arguments from a configuration file (CSV, JSON, YAML) and returns them as a dictionary.
     """
@@ -100,7 +100,7 @@ def load_args_from_file(file_path):
     return args_from_file
 
 # TODO: Simplify Command line arguments parsing? Force some of the mto be from conifguration files
-def parse():
+def parse() -> dict[str, int | str | list]:
     """
     Parse command-line arguments and configuration file inputs for training models.
 

@@ -1,7 +1,6 @@
 import os
 import logging
 from collections import Counter
-from typing import Tuple, Dict
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 
@@ -27,7 +26,7 @@ def log_dataset_statistics(dataset, dataset_name: str):
         logging.info(f"  Class '{classes[class_idx]}': {count} samples")
 
 
-def log_all_statistics(loaders: Dict[str, DataLoader]):
+def log_all_statistics(loaders: dict[str, DataLoader]):
     """
     Logs statistics for all DataLoaders.
 
@@ -47,10 +46,10 @@ def load_data(
     train_split: float = 0.8,
     test_split: float = 0.1,
     img_size: int = 224,
-    mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
-    std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
+    mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+    std: tuple[float, float, float] = (0.229, 0.224, 0.225),
     use_augmentation: bool = False
-) -> Dict[str, DataLoader]:
+) -> dict[str, DataLoader]:
     """
     Load and preprocess data from a directory, handling both pre-split and unsplit datasets.
 
@@ -60,12 +59,12 @@ def load_data(
         train_split (float): Proportion of data to use for training (if splitting).
         test_split (float): Proportion of data to use for testing (if splitting).
         img_size (int): Target size for image resizing.
-        mean (Tuple[float, float, float]): Mean values for normalization.
-        std (Tuple[float, float, float]): Standard deviation values for normalization.
+        mean (tuple[float, float, float]): Mean values for normalization.
+        std (tuple[float, float, float]): Standard deviation values for normalization.
         use_augmentation (bool): Whether to apply data augmentation to the training dataset.
 
     Returns:
-        Dict[str, DataLoader]: A dictionary containing DataLoaders for 'train', 'val', and optionally 'test'.
+        dict[str, DataLoader]: A dictionary containing DataLoaders for 'train', 'val', and optionally 'test'.
     """
     # Validate dataset directory
     if not os.path.exists(dataset_dir):

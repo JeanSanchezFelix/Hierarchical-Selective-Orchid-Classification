@@ -6,16 +6,13 @@ import numpy as np
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from sklearn.model_selection import KFold
-from typing import Dict
 from utils.metrics import plot_train_val_curve, calculate_metrics
 from utils.setup import model_setup
 from utils.eval import test_inference
-# from utils.callbacks.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-# from utils.earlystop import EarlyStopping
 
 def train_models(
     model_name: str,
-    data_loaders: Dict[str, DataLoader],
+    data_loaders: dict[str, DataLoader],
     save_dir: str,
     learning_rate: float = 0.001,
     epochs: int = 5,
@@ -30,7 +27,7 @@ def train_models(
 
     Parameters:
         model_name (str): Name of the pre-trained model to use (e.g., 'resnet18', 'mobilenet_v2').
-        data_loaders Dict[str, DataLoader]: DataLoaders containing data splits (e.g. train, val, test)
+        data_loaders dict[str, DataLoader]: DataLoaders containing data splits (e.g. train, val, test)
         save_dir (str): Directory to save the trained model and checkpoints.
         learning_rate (float): Learning rate for the optimizer.
         epochs (int): Number of training epochs.
@@ -96,18 +93,18 @@ def train_models(
     for callback in callbacks:
         callback.on_train_end(logs={"model": model, "optimizer": optimizer})
 
-    # # Load the best model weights before returning
-    # model.load_state_dict(torch.load(best_model_path, weights_only=False))
-    # logging.info(f"Best model weights loaded from: {best_model_path}")
+    # Load the best model weights before returning
+    model.load_state_dict(torch.load(best_model_path, weights_only=False))
+    logging.info(f"Best model weights loaded from: {best_model_path}")
 
-    # plot_train_val_curve(loss_dict, save_path=os.path.join(save_dir, "curve.png"))
+    plot_train_val_curve(loss_dict, save_path=os.path.join(save_dir, "curve.png"))
 
-    # if data_loaders["test"]:
-    #     test_inference(model, data_loaders["test"], device, save_dir)
+    if data_loaders["test"]:
+        test_inference(model, data_loaders["test"], device, save_dir)
 
     return model
 
-def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs, device, best_model_path, callbacks):
+def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs, device, callbacks) -> dict[str,list]:
     """
     Train and evaluate the model while displaying metrics with a progress bar.
 
@@ -119,8 +116,6 @@ def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, ep
         optimizer: Optimization algorithm.
         epochs (int): Number of epochs.
         device (torch.device): Device to run the model on.
-        best_model_path (string): Path to save model checkpoints
-
     Returns:
         dict: Losses for each phase across all epochs.
     """

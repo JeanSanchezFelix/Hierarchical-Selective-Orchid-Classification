@@ -1,9 +1,10 @@
 import logging
 import torch.nn as nn
-from torch.optim import Adam, SGD, RMSprop, Adagrad, AdamW
+import torch.optim
+# from torch.optim import Adam, SGD, RMSprop, Adagrad, AdamW
 from torchvision import models
 
-def setup_model(model_name, pretrained_weights, num_classes):
+def setup_model(model_name: str, pretrained_weights: bool, num_classes: int) -> nn.Module:
     """
     Set up a pre-trained model with a customized classification head.
 
@@ -69,7 +70,7 @@ def setup_model(model_name, pretrained_weights, num_classes):
 
     return model
 
-def setup_criterion(criterion):
+def setup_criterion(criterion: str) -> nn.Module:
     """
     Configure the loss function for training.
 
@@ -101,7 +102,7 @@ def setup_criterion(criterion):
     
     return criterion
 
-def setup_optimizer(model, optimizer, learning_rate):
+def setup_optimizer(model, optimizer: str, learning_rate: float):
     """
     Configure the optimizer for training.
 
@@ -118,22 +119,28 @@ def setup_optimizer(model, optimizer, learning_rate):
     """
     # Map the optimizer name to the corresponding optimizer
     if optimizer.lower() == "adam":
-        optimizer = Adam(model.parameters(), lr=learning_rate)
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     elif optimizer.lower() == "sgd":
-        optimizer = SGD(model.parameters(), lr=learning_rate, momentum=0.9)
+        optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
     elif optimizer.lower() == "rmsprop":
-        optimizer = RMSprop(model.parameters(), lr=learning_rate, momentum=0.9)
+        optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate, momentum=0.9)
     elif optimizer.lower() == "adagrad":
-        optimizer = Adagrad(model.parameters(), lr=learning_rate)
+        optimizer = torch.optim.Adagrad(model.parameters(), lr=learning_rate)
     elif optimizer.lower() == "adamw":
-        optimizer = AdamW(model.parameters(), lr=learning_rate)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     else:
         logging.error(f"Unsupported optimizer: {optimizer}")
         raise ValueError(f"Unsupported optimizer: {optimizer}")
 
     return optimizer
 
-def model_setup(model_name, learning_rate, criterion, optimizer, pretrained_weights, num_classes):
+def model_setup(model_name: str, 
+                learning_rate: float, 
+                criterion: str, 
+                optimizer: str, 
+                pretrained_weights: bool, 
+                num_classes: int
+) -> tuple[nn.Module, nn.Module, torch.optim.Optimizer]:
     """
     Complete setup for the model, optimizer, and loss function.
 
