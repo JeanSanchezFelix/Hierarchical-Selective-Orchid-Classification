@@ -97,7 +97,7 @@ def parse():
     IMG_SIZE = int(get_arg_value('img_size', 224))
     DATA_AUGMENTATION = bool(int(get_arg_value('data_augmentation', 0)))
     PRETRAINED_WEIGHTS = get_arg_value('pretrained_weights', None)
-    SAVE_DIR = get_arg_value('save_dir', 'saved_models')
+    SAVE_DIR = get_arg_value('save_dir', f'models')
 
     # Argument Validation
     if NUM_MODELS <= 0:

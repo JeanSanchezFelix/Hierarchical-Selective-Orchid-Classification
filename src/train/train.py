@@ -83,8 +83,8 @@ def train_models(
     logging.info(f"Training will save checkpoints to: {save_dir}")
 
     callbacks = [
-        EarlyStopping(monitor='val_loss', patience=3, mode='min', save_path='best_model.pth'),
-        ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, min_lr=1e-6),
+        # EarlyStopping(monitor='val_loss', patience=1, mode='max', save_path='best_model.pth', verbose=True),
+        # ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=1, mode='max', min_lr=1e-6, verbose=True),
         ModelCheckpoint(monitor='val_loss', save_best_only=True, mode='min', filepath='checkpoint_model.pth', verbose=True),
     ]
 
@@ -95,7 +95,7 @@ def train_models(
     logging.info("Starting training...")
     start = time.time()
 
-    loss_dict = train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs, device, best_model_path)
+    loss_dict = train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs, device, best_model_path, callbacks)
 
     time_elapsed = time.time() - start
     logging.info(f"Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s")
@@ -104,18 +104,18 @@ def train_models(
     for callback in callbacks:
         callback.on_train_end(logs={"model": model, "optimizer": optimizer})
 
-    # Load the best model weights before returning
-    model.load_state_dict(torch.load(best_model_path, weights_only=False))
-    logging.info(f"Best model weights loaded from: {best_model_path}")
+    # # Load the best model weights before returning
+    # model.load_state_dict(torch.load(best_model_path, weights_only=False))
+    # logging.info(f"Best model weights loaded from: {best_model_path}")
 
-    plot_train_val_curve(loss_dict, save_path=os.path.join(save_dir, "curve.png"))
+    # plot_train_val_curve(loss_dict, save_path=os.path.join(save_dir, "curve.png"))
 
-    if data_loaders["test"]:
-        test_inference(model, data_loaders["test"], device, save_dir)
+    # if data_loaders["test"]:
+    #     test_inference(model, data_loaders["test"], device, save_dir)
 
     return model
 
-def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs, device, best_model_path):
+def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs, device, best_model_path, callbacks):
     """
     Train and evaluate the model while displaying metrics with a progress bar.
 
@@ -138,6 +138,12 @@ def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, ep
     for epoch in range(epochs):
         logging.info(f"Epoch {epoch + 1}/{epochs}")
         logging.info("-" * 10)
+
+        logs = {"epoch": epoch, "model": model, "optimizer": optimizer}
+
+        # Trigger on_epoch_start callbacks
+        for callback in callbacks:
+            callback.on_epoch_start(epoch, logs)
 
         # set model to train or eval mode
         for phase in ['train', 'val']:
@@ -190,12 +196,22 @@ def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, ep
             loss_dict[phase].append(epoch_loss)
             logging.info(f"{phase.capitalize()} Loss: {epoch_loss:.4f}")
             logging.info(f"{phase.capitalize()} Metrics: " + ", ".join([f"{key}: {value:.4g}" for key, value in metrics.items()]))
+            logs.update({f"{phase}_loss": epoch_loss, **metrics})
 
+            # TODO: change parsing to handle callbacks. Right now the callbacks only accept logs for loss, leverage for other metrics
             # Checkpoint for the best model
-            if phase == 'val' and metrics['Accuracy'] > best_acc:
-                best_acc = metrics['Accuracy']
-                torch.save(model.state_dict(), best_model_path)
-                logging.info(f"Checkpoint: Best model saved with accuracy {best_acc:.4f}")
+            # if phase == 'val' and metrics['Accuracy'] > best_acc:
+            #     best_acc = metrics['Accuracy']
+            #     torch.save(model.state_dict(), best_model_path)
+            #     logging.info(f"Checkpoint: Best model saved with accuracy {best_acc:.4f}")
+
+        # Trigger on_epoch_end callbacks
+        for callback in callbacks:
+            callback.on_epoch_end(epoch, logs)
+
+        # Check for early stopping
+        if any(getattr(cb, "early_stop", False) for cb in callbacks):
+            break
 
     logging.info(f"Best validation accuracy: {best_acc:.4f}")
     return loss_dict

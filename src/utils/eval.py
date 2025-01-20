@@ -30,8 +30,8 @@ def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.devi
             _, preds = torch.max(outputs, 1)
             probs = torch.nn.functional.softmax(outputs, dim=1)
 
-            predictions.extend(preds.cpu().numpy())
             ground_truths.extend(labels.cpu().numpy())
+            predictions.extend(preds.cpu().numpy())
             probabilities.extend(probs.cpu().numpy())
     
     logging.info("Inference complete.")
@@ -48,7 +48,8 @@ def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.devi
         os.makedirs(save_dir, exist_ok=True)
         plot_metric_bar(metrics, save_path=os.path.join(save_dir, "metrics_bar_chart.png"))
         plot_confusion_matrix(
-            metrics["Confusion Matrix"],
+            y_true=y_true,
+            y_pred=y_pred,
             labels=class_labels,
             save_path=os.path.join(save_dir, "confusion_matrix.png")
         )

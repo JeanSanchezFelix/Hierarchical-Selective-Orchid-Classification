@@ -42,9 +42,6 @@ def calculate_metrics(y_true, y_pred, y_proba=None):
             # Multiclass AUC-Score (requires one-vs-rest probabilities)
             metrics["AUC-Score"] = roc_auc_score(y_true, y_proba, multi_class='ovr', average='macro')
 
-    # Confusion matrix
-    metrics["Confusion Matrix"] = confusion_matrix(y_true, y_pred)
-
     return metrics
 
 def plot_metric_bar(metrics: dict, title: str = "Performance Metrics", save_path: str = None):
@@ -95,16 +92,20 @@ def plot_metric_bar(metrics: dict, title: str = "Performance Metrics", save_path
     # plt.show()
 
 
-def plot_confusion_matrix(conf_matrix, labels=None, title: str = "Confusion Matrix", save_path: str = None):
+def plot_confusion_matrix(y_true, y_pred, labels=None, title: str = "Confusion Matrix", save_path: str = None):
     """
     Plots a confusion matrix heatmap.
     
     Args:
-        conf_matrix (2D array): Confusion matrix data.
+        y_true (list or ndarray): True labels.
+        y_pred (list or ndarray): Predicted labels.
         labels (list): List of class labels.
         title (str): Title of the plot.
         save_path (str): Optional path to save the plot.
     """
+    # Confusion matrix
+    conf_matrix = confusion_matrix(y_true, y_pred)
+
     plt.figure(figsize=(8, 6))
     sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
     plt.xlabel("Predicted Labels")

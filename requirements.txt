@@ -1,4 +1,7 @@
 python_version==3.12
+torch==2.5.1+cu124
+torchaudio==2.5.1+cu124
+torchvision==0.20.1+cu124
 tqdm==4.67.1
 # numpy==2.2.1
 matplotlib==3.10.0
