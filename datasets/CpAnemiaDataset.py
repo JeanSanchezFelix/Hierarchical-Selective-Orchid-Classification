@@ -10,7 +10,7 @@ class CpAnemiaDataset(Dataset):
 
     def __init__(self):
         rootDir = "data/cp-anemia/download/"
-        self.name="MonkeyPox"
+        self.name="Cp-Anemia"
         self.dataset = datasets.ImageFolder(rootDir,
                                              transform = None)
         self.class_to_idx = self.dataset.class_to_idx
