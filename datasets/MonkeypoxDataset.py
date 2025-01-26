@@ -1,16 +1,12 @@
-import os
-import torch
-import pandas as pd
-
 from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets
 
 
 class MonkeypoxDataset(Dataset):
 
+    rootDir = "data/monkeypox/download/"
 
-    def __init__(self,mode="train"):
-        rootDir = "data/monkeypox/download/"
+    def __init__(self, transform, mode="train"):
         self.name="MonkeyPox"
         directory=""
         if mode == "train":
@@ -20,19 +16,22 @@ class MonkeypoxDataset(Dataset):
         else:
             print("ERROR:Invalid mode passed")
             return
-        self.dataset = datasets.ImageFolder(rootDir + directory,
-                                             transform = None)
+        self.dataset = datasets.ImageFolder(self.rootDir + directory,
+                                             transform = transform)
         self.class_to_idx = self.dataset.class_to_idx
 
     def __len__(self):
         return len(self.dataset)
-
 
     def __getitem__(self,idx):
         return self.dataset[idx]
 
     def getName(self):
         return self.name
+    
+    @classmethod
+    def getDir(cls):
+        return cls.rootDir
 
 
 class TestMonkeypoxDataset():

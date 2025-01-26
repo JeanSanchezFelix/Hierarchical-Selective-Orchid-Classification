@@ -6,9 +6,9 @@ import numpy as np
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from sklearn.model_selection import KFold
-from utils.metrics import plot_train_val_curve, calculate_metrics
-from utils.setup import model_setup
-from utils.eval import test_inference
+from src.utils.metrics import plot_train_val_curve, calculate_metrics
+from src.utils.model_setup import training_setup
+from src.utils.eval import test_inference
 
 def train_models(
     model_name: str,
@@ -33,8 +33,9 @@ def train_models(
         epochs (int): Number of training epochs.
         criterion (str): Criterion to use (e.g., 'cross_entropy', 'bce').
         optimizer (str): Optimizer to use (e.g., 'adam', 'sgd').
-        freeze_base (bool): Whether to freeze the base model layers.
+        callbacks (list): List of callbacks (e.g., 'ModelCheckpoint', 'EarlyStopping')
         pretrained_weights (str): Path to existing weights for further training. Defaults to None.
+        freeze_base (bool): Whether to freeze the base model layers.
     """
     # Load dataset
     logging.info("Loading datasets...")
@@ -44,7 +45,7 @@ def train_models(
     logging.info("Datasets loaded successfully.")
     num_classes = train_loader.dataset.classes
 
-    model, criterion, optimizer = model_setup(model_name, learning_rate, criterion, optimizer, pretrained_weights, num_classes)
+    model, criterion, optimizer = training_setup(model_name, learning_rate, criterion, optimizer, pretrained_weights, num_classes)
 
     # Load weights if a path is provided
     if pretrained_weights:
@@ -84,7 +85,7 @@ def train_models(
     logging.info("Starting training...")
     start = time.time()
 
-    loss_dict = train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs, device, best_model_path, callbacks)
+    loss_dict = train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs, device, callbacks)
 
     time_elapsed = time.time() - start
     logging.info(f"Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s")
@@ -185,7 +186,6 @@ def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, ep
             logging.info(f"{phase.capitalize()} Metrics: " + ", ".join([f"{key}: {value:.4g}" for key, value in metrics.items()]))
             logs.update({f"{phase}_loss": epoch_loss, **metrics})
 
-            # TODO: Log info level 3 and up to text file
             # Checkpoint for the best model
             # if phase == 'val' and metrics['Accuracy'] > best_acc:
             #     best_acc = metrics['Accuracy']

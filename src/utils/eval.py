@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_radar_chart
+from src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_radar_chart
 
 def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.device, save_dir: str):
     """

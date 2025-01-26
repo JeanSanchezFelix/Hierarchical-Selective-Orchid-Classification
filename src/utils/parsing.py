@@ -4,16 +4,32 @@ import yaml
 import json
 import argparse
 import logging
-from utils.callbacks.callbacks import Callback, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from src.utils.callbacks import process_callbacks
 
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Registry mapping callback names to constructors
-CALLBACK_REGISTRY = {
-    "EarlyStopping": EarlyStopping,
-    "ReduceLROnPlateau": ReduceLROnPlateau,
-    "ModelCheckpoint": ModelCheckpoint,
-}
+# Function to load arguments from a config file (.csv)
+def load_args_from_file(file_path: str) -> dict[str,str]:
+    """
+    Reads arguments from a configuration file (CSV, JSON, YAML) and returns them as a dictionary.
+    """
+    args_from_file = {}
+    try:
+        if file_path.endswith(".csv"):
+            with open(file_path, mode="r") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    for key, value in row.items():
+                        args_from_file[key] = value.strip() if value else None
+        elif file_path.endswith(".json"):
+            with open(file_path, mode="r") as f:
+                args_from_file = json.load(f)
+        elif file_path.endswith(".yaml") or file_path.endswith(".yml"):
+            with open(file_path, mode="r") as f:
+                args_from_file = yaml.safe_load(f)
+        else:
+            raise ValueError("Unsupported file format. Please provide a .csv, .json, or .yaml file.")
+    except Exception as e:
+        raise ValueError(f"Error reading the config file: {e}")
+    return args_from_file
 
 # Configure logging
 def configure_logging(logs: bool, save_dir: str):
@@ -48,58 +64,41 @@ def configure_logging(logs: bool, save_dir: str):
         stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(stream_handler)
 
-def process_callbacks(callback_names: list, save_dir: str) -> list[Callback]:
+def validate_args(args):
     """
-    Processes a list of callback names into instantiated Callback objects.
+    Validate the parsed arguments.
 
     Parameters:
-        callback_names (list): List of callback names as strings.
-        save_dir (str): Directory to save model checkpoints.
+        args (dict): Parsed arguments.
 
-    Returns:
-        list: List of instantiated Callback objects.
+    Raises:
+        ValueError: If validation checks fail.
     """
-    callbacks = []
-    for name in callback_names:
-        if name not in CALLBACK_REGISTRY:
-            raise ValueError(f"Callback '{name}' is not recognized. Available callbacks: {list(CALLBACK_REGISTRY.keys())}")
-        
-        # Instantiate callback with default or user-specified parameters
-        if name == "EarlyStopping":
-            callbacks.append(CALLBACK_REGISTRY[name](monitor="val_loss", patience=3, mode="min", save_path=f"{save_dir}/best_model.pth", verbose=False))
-        elif name == "ReduceLROnPlateau":
-            callbacks.append(CALLBACK_REGISTRY[name](monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6, verbose=False))
-        elif name == "ModelCheckpoint":
-            callbacks.append(CALLBACK_REGISTRY[name](monitor="val_loss", save_best_only=True, mode="min", filepath=f"{save_dir}/best_model.pth", verbose=False))
+    if args["img_size"] <= 0:
+        raise ValueError("The image size (--img_size) must be a positive integer.")
+    if args["epochs"] <= 0:
+        raise ValueError("The number of epochs (--epochs) must be a positive integer.")
+    if args["batch_size"] <= 0:
+        raise ValueError("The batch size (--batch_size) must be a positive integer.")
+    if args["learning_rate"] <= 0:
+        raise ValueError("The learning rate (--learning_rate) must be a positive number.")
+    if not (0.0 < args["train_split"] <= 1.0):
+        raise ValueError("The training split (--train_split) must be between 0.0 and 1.0.")
+    if not (0.0 <= args["test_split"] < 1.0):
+        raise ValueError("The test split (--test_split) must be between 0.0 and 1.0.")
+    if args["train_split"] + args["test_split"] >= 1.0:
+        raise ValueError("The sum of train_split and test_split must be less than 1.0.")
+    if args["pretrained_weights"] and not os.path.exists(args["pretrained_weights"]):
+        raise ValueError(f"The specified pretrained weights ({args["pretrained_weights"]:}) do not exist.")
 
-    return callbacks
+    # Logging configuration details
+    logging.info("Configuration:")
 
-# Function to load arguments from a config file (.csv)
-def load_args_from_file(file_path: str) -> dict[str,str]:
-    """
-    Reads arguments from a configuration file (CSV, JSON, YAML) and returns them as a dictionary.
-    """
-    args_from_file = {}
-    try:
-        if file_path.endswith(".csv"):
-            with open(file_path, mode="r") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    for key, value in row.items():
-                        args_from_file[key] = value.strip() if value else None
-        elif file_path.endswith(".json"):
-            with open(file_path, mode="r") as f:
-                args_from_file = json.load(f)
-        elif file_path.endswith(".yaml") or file_path.endswith(".yml"):
-            with open(file_path, mode="r") as f:
-                args_from_file = yaml.safe_load(f)
-        else:
-            raise ValueError("Unsupported file format. Please provide a .csv, .json, or .yaml file.")
-    except Exception as e:
-        raise ValueError(f"Error reading the config file: {e}")
-    return args_from_file
+    for argument, value in args.items():
+        logging.info(f"{argument.upper()}: {value}")
 
-# TODO: Simplify Command line arguments parsing? Force some of the mto be from conifguration files
+
+# TODO: Simplify Command line arguments parsing? Force some of the parameters to be from conifguration files?
 def parse() -> dict[str, int | str | list]:
     """
     Parse command-line arguments and configuration file inputs for training models.
@@ -112,9 +111,8 @@ def parse() -> dict[str, int | str | list]:
     Returns:
         dict: A dictionary containing the parsed and validated configuration values:
             - MODEL_NAME (str): Name of the pre-trained model to use.
-            - NUM_MODELS (int): Number of models to train.
             - EPOCHS (int): Number of epochs for training.
-            - DATASET_DIR (str): Path to the dataset directory.
+            - DATASET (str): Dataset that will be used for training.
             - BATCH_SIZE (int): Batch size for training.
             - LEARNING_RATE (float): Learning rate for the optimizer.
             - OPTIMIZER (str): Optimizer to use ('adam' or 'sgd').
@@ -129,26 +127,90 @@ def parse() -> dict[str, int | str | list]:
         ValueError: If any of the arguments fail validation checks.
     """
     # Argument Parsing
-    parser = argparse.ArgumentParser(description='Train multiple models with custom configurations.')
-    parser.add_argument('--config_file', type=str, help='Path to configuration file (CSV)')
-    parser.add_argument('--model_name', type=str, help='Name of the pre-trained model to use (mobilenet, efficientnet, etc.)')
-    parser.add_argument('--num_models', type=int, help='Number of models to train')
-    parser.add_argument('--epochs', type=int, help='Number of epochs to train each model')
-    parser.add_argument('--dataset_dir', type=str, help='Directory where the dataset is located')
-    parser.add_argument('--batch_size', type=int, help='Batch size for training')
-    parser.add_argument('--criterion', type=str, choices=["cross_entropy", "mse", "l1", "nll", "bce", "bce_with_logits"], 
-                        help='Optimizer to use')
-    parser.add_argument('--learning_rate', type=float, help='Learning rate for the optimizer')
-    parser.add_argument('--optimizer', type=str, choices=["adam", "sgd", "rmsprop", "adagrad", "adamw"], help='Optimizer to use')
-    parser.add_argument('--train_split', type=float, help='Percentage of training split (0.0-1.0)')
-    parser.add_argument('--test_split', type=float, help='Percentage of test split (0.0-1.0)')
-    parser.add_argument('--img_size', type=int, help='Image size (e.g., 224 for 224x224 images)')
-    parser.add_argument('--data_augmentation', type=str, choices=["0", "1"], help='Enable data augmentation: 0 (False), 1 (True)')
-    parser.add_argument('--callbacks', type=str, nargs='*', choices=["EarlyStopping", "ModelCheckpoint", "ReduceLROnPlateau"],
-                        help='Callbacks used in training (EarlyStopping, ModelCheckpoint, etc.)')
-    parser.add_argument('--pretrained_weights', type=str, help='Path to pretrained weights')
-    parser.add_argument('--save_dir', type=str, help='Directory to save the models')
-    parser.add_argument('--logging', type=str, choices=["0", "1"], help='Enable CLI logging: 0 (False), 1 (True)')
+
+    parser = argparse.ArgumentParser(
+        description="Train models with configurable parameters and callbacks.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    # Model parameters group
+    model_group = parser.add_argument_group("Model Parameters")
+    model_group.add_argument("--model_name", type=str, default="mobilenet_v2", help="Name of the pre-trained model.")
+    model_group.add_argument('--pretrained_weights', type=str, default=None, help='Path to pretrained weights.')
+    model_group.add_argument("--img_size", type=int, default=224, help="Image size for model input.")
+
+    # Training parameters group
+    training_group = parser.add_argument_group("Training Parameters")
+    training_group.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
+    training_group.add_argument("--batch_size", type=int, default=32, help="Batch size for training.")
+    training_group.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for the optimizer.")
+    training_group.add_argument('--criterion', type=str, choices=["cross_entropy", "mse", "l1", "nll", "bce", "bce_with_logits"], 
+                        default="cross_entropy", help='Optimizer to use')
+    training_group.add_argument("--optimizer", type=str, choices=["adam", "sgd", "rmsprop", "adagrad", "adamw"], 
+                                default="adam", help="Optimizer.")
+    
+    # Callbacks parameters group
+    callback_group = parser.add_argument_group("Callback Parameters")
+    callback_group.add_argument("--callbacks", type=str, nargs="*", default=["ModelCheckpoint"], 
+                                choices=["EarlyStopping", "ModelCheckpoint", "ReduceLROnPlateau"], help="List of callbacks.")
+
+    # ModelCheckpoint parameters
+    callback_group.add_argument("--ModelCheckpoint_monitor", type=str, default="val_loss", 
+                                 help="Monitor for ModelCheckpoint.")
+    callback_group.add_argument("--ModelCheckpoint_save_best_only", action="store_true", default=True, 
+                                 help="Save only the best model for ModelCheckpoint.")
+    callback_group.add_argument("--ModelCheckpoint_mode", type=str, choices=["min", "max"], default="min", 
+                                 help="Mode for ModelCheckpoint.")
+    # callback_group.add_argument("--ModelCheckpoint_save_path", type=str, default="./models/best_model.pth", 
+    #                              help="Filepath for saving checkpoints.")
+    callback_group.add_argument("--ModelCheckpoint_verbose", action="store_true", default=False, 
+                                 help="Verbose for EarlyStopping.")
+
+    # EarlyStopping parameters
+    callback_group.add_argument("--EarlyStopping_monitor", type=str, default="val_loss", 
+                                 help="Monitor for EarlyStopping.")
+    callback_group.add_argument("--EarlyStopping_patience", type=int, default=5, 
+                                 help="Patience for EarlyStopping.")
+    callback_group.add_argument("--EarlyStopping_min_delta", type=float, default=0.0, 
+                                 help="Minimum delta for EarlyStopping.")
+    callback_group.add_argument("--EarlyStopping_mode", type=str, choices=["min", "max"], default="min", 
+                                 help="Mode for EarlyStopping.")
+    # callback_group.add_argument("--EarlyStopping_save_path", type=str, default="./models/best_model.pth", 
+    #                              help="Filepath for EarlyStopping model.")
+    callback_group.add_argument("--EarlyStopping_verbose", action="store_true", default=False, 
+                                 help="Verbose for EarlyStopping.")
+
+    # ReduceLROnPlateau parameters
+    callback_group.add_argument("--ReduceLROnPlateau_monitor", type=str, default="val_loss", 
+                                 help="Monitor for ReduceLROnPlateau_monitor.")
+    callback_group.add_argument("--ReduceLROnPlateau_factor", type=float, default=0.1, 
+                                 help="Factor by which to reduce LR for ReduceLROnPlateau.")
+    callback_group.add_argument("--ReduceLROnPlateau_patience", type=int, default=5, 
+                                 help="Patience for ReduceLROnPlateau.")
+    callback_group.add_argument("--ReduceLROnPlateau_min_delta", type=float, default=0.0, 
+                                 help="Minimum delta for ReduceLROnPlateau.")
+    callback_group.add_argument("--ReduceLROnPlateau_mode", type=str, choices=["min", "max"], default="min", 
+                                 help="Mode for ReduceLROnPlateau.")
+    callback_group.add_argument("--ReduceLROnPlateau_min_lr", type=float, default=1e-6, 
+                                 help="Minimum learning rate for ReduceLROnPlateau.")
+    callback_group.add_argument("--ReduceLROnPlateau_verbose", action="store_true", default=False, 
+                                 help="Verbose for ReduceLROnPlateau.")
+
+    # Data parameters group
+    data_group = parser.add_argument_group("Data Parameters")
+    data_group.add_argument('--dataset', type=str, choices=["CpAnemia", "MonkeyPox", "SkinCancer"], required=True,
+                         help='Dataset that will be used for training.')
+    data_group.add_argument("--train_split", type=float, default=0.8, help="Proportion of data for training (0.0-1.0).")
+    data_group.add_argument("--test_split", type=float, default=0.1, help="Proportion of data for testing (0.0-1.0).")
+    data_group.add_argument("--data_augmentation", action="store_true", default=0, 
+                            help="Enable data augmentation: 0 (False), 1 (True).")
+
+    # Miscellaneous parameters group
+    misc_group = parser.add_argument_group("Miscellaneous")
+    misc_group.add_argument("--save_dir", type=str, default="./models", help="Directory to save models.")
+    misc_group.add_argument("--config_file", type=str, help="Path to a YAML, CSV or JSON configuration file.")
+    misc_group.add_argument('--logging', action="store_true", help='Enable CLI logging: 0 (False), 1 (True)')
+    
 
     # Parse command-line arguments
     args = parser.parse_args()
@@ -156,96 +218,36 @@ def parse() -> dict[str, int | str | list]:
     # Load configuration from file if provided
     config_args = load_args_from_file(args.config_file) if args.config_file else {}
 
-    # Set default or override config file arguments with command-line arguments
-    #TODO: Error when CLI arguments are int (0,1) since they are treated as False or True
-    def get_arg_value(arg_name, default):
-        """
-        Helper function to get argument values, prioritizing CLI input over config file.
-        """
-        return getattr(args, arg_name) or config_args.get(arg_name, default)
-
-    MODEL_NAME = get_arg_value('model_name', 'mobilenet_v2')
-    NUM_MODELS = int(get_arg_value('num_models', 1))
-    EPOCHS = int(get_arg_value('epochs', 5))
-    DATASET_DIR = get_arg_value('dataset_dir', None)
-    BATCH_SIZE = int(get_arg_value('batch_size', 32))
-    LEARNING_RATE = float(get_arg_value('learning_rate', 0.001))
-    CRITERION = get_arg_value('criterion', 'cross_entropy')
-    OPTIMIZER = get_arg_value('optimizer', 'adam')
-    TRAIN_SPLIT = float(get_arg_value('train_split', 0.8))
-    TEST_SPLIT = float(get_arg_value('test_split', 0.1))
-    IMG_SIZE = int(get_arg_value('img_size', 224))
-    DATA_AUGMENTATION = bool(int(get_arg_value('data_augmentation', 0)))
-    CALLBACKS = get_arg_value('callbacks', ['ModelCheckpoint'])
-    PRETRAINED_WEIGHTS = get_arg_value('pretrained_weights', None)
-    SAVE_DIR = get_arg_value('save_dir', f'models')
-    LOGGING = bool(int(get_arg_value('logging', 1)))
-
+    # Combine arguments (CLI > Config File > Default)
+    combined_args = {**config_args, **vars(args)}
+    
     # Configure logging
-    configure_logging(LOGGING, SAVE_DIR)
+    configure_logging(combined_args['logging'], combined_args['save_dir'])
 
-    # Argument Validation
-    if NUM_MODELS <= 0:
-        raise ValueError("The number of models (--num_models) must be a positive integer.")
-    if EPOCHS <= 0:
-        raise ValueError("The number of epochs (--epochs) must be a positive integer.")
-    if BATCH_SIZE <= 0:
-        raise ValueError("The batch size (--batch_size) must be a positive integer.")
-    if LEARNING_RATE <= 0:
-        raise ValueError("The learning rate (--learning_rate) must be a positive number.")
-    if not DATASET_DIR or not os.path.exists(DATASET_DIR):
-        raise ValueError(f"The specified dataset directory ({DATASET_DIR}) does not exist.")
-    if not (0.0 < TRAIN_SPLIT <= 1.0):
-        raise ValueError("The training split (--train_split) must be between 0.0 and 1.0.")
-    if not (0.0 <= TEST_SPLIT < 1.0):
-        raise ValueError("The test split (--test_split) must be between 0.0 and 1.0.")
-    if TRAIN_SPLIT + TEST_SPLIT >= 1.0:
-        raise ValueError("The sum of train_split and test_split must be less than 1.0.")
-    if PRETRAINED_WEIGHTS and not os.path.exists(DATASET_DIR):
-        raise ValueError(f"The specified pretrained weights ({PRETRAINED_WEIGHTS}) do not exist.")
-    if IMG_SIZE <= 0:
-        raise ValueError("The image size (--img_size) must be a positive integer.")
+    # Validate arguments
+    validate_args(combined_args)
 
     # Ensure save directory exists
-    os.makedirs(SAVE_DIR, exist_ok=True)
-
-    # Logging configuration details
-    logging.info("Configuration:")
-    logging.info(f"MODEL_NAME: {MODEL_NAME}")
-    logging.info(f"NUM_MODELS: {NUM_MODELS}")
-    logging.info(f"EPOCHS: {EPOCHS}")
-    logging.info(f"DATASET_DIR: {DATASET_DIR}")
-    logging.info(f"BATCH_SIZE: {BATCH_SIZE}")
-    logging.info(f"LEARNING_RATE: {LEARNING_RATE}")
-    logging.info(f"CRITERION: {CRITERION}")
-    logging.info(f"OPTIMIZER: {OPTIMIZER}")
-    logging.info(f"TRAIN_SPLIT: {TRAIN_SPLIT}")
-    logging.info(f"TEST_SPLIT: {TEST_SPLIT}")
-    logging.info(f"IMG_SIZE: {IMG_SIZE}")
-    logging.info(f"DATA_AUGMENTATION: {DATA_AUGMENTATION}")
-    logging.info(f"CALLBACKS: {CALLBACKS}")
-    logging.info(f"PRETRAINED_WEIGHTS: {PRETRAINED_WEIGHTS}")
-    logging.info(f"SAVE_DIR: {SAVE_DIR}")
+    os.makedirs(combined_args['save_dir'], exist_ok=True)
 
     # Initialize Callbacks
-    CALLBACKS = process_callbacks(CALLBACKS, SAVE_DIR)
+    CALLBACKS = process_callbacks(combined_args)
 
     return {
-        "MODEL_NAME": MODEL_NAME,
-        "NUM_MODELS": NUM_MODELS,
-        "EPOCHS": EPOCHS,
-        "DATASET_DIR": DATASET_DIR,
-        "BATCH_SIZE": BATCH_SIZE,
-        "LEARNING_RATE": LEARNING_RATE,
-        "CRITERION": CRITERION,
-        "OPTIMIZER": OPTIMIZER,
-        "TRAIN_SPLIT": TRAIN_SPLIT,
-        "TEST_SPLIT": TEST_SPLIT,
-        "IMG_SIZE": IMG_SIZE,
-        "DATA_AUGMENTATION": DATA_AUGMENTATION,
-        "CALLBACKS": CALLBACKS,
-        "PRETRAINED_WEIGHTS": PRETRAINED_WEIGHTS,
-        "SAVE_DIR": SAVE_DIR
+        "MODEL_NAME": combined_args['model_name'],
+        "EPOCHS": combined_args['epochs'],
+        "DATASET": combined_args['dataset'],
+        "BATCH_SIZE": combined_args['batch_size'],
+        "LEARNING_RATE": combined_args['learning_rate'],
+        "CRITERION": combined_args['criterion'],
+        "OPTIMIZER": combined_args['optimizer'],
+        "TRAIN_SPLIT": combined_args['train_split'],
+        "TEST_SPLIT": combined_args['test_split'],
+        "IMG_SIZE": combined_args['img_size'],
+        "DATA_AUGMENTATION": combined_args['data_augmentation'],
+        "CALLBACKS": list(CALLBACKS.values()),
+        "PRETRAINED_WEIGHTS": combined_args['pretrained_weights'],
+        "SAVE_DIR": combined_args['save_dir']
     }
 
 # if __name__ == "__main__":

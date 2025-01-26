@@ -1,8 +1,9 @@
 import os
 import logging
 from collections import Counter
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import datasets, transforms
+from datasets.registry import DATASET_REGISTRY
 
 def log_dataset_statistics(dataset, dataset_name: str):
     """
@@ -41,7 +42,7 @@ def log_all_statistics(loaders: dict[str, DataLoader]):
     logging.info(f"Total dataset size: {total_samples}")
 
 def load_data(
-    dataset_dir: str,
+    dataset: str,
     batch_size: int = 32,
     train_split: float = 0.8,
     test_split: float = 0.1,
@@ -54,7 +55,7 @@ def load_data(
     Load and preprocess data from a directory, handling both pre-split and unsplit datasets.
 
     Parameters:
-        dataset_dir (str): Path to the dataset directory.
+        dataset (str): Dataset used for training.
         batch_size (int): Batch size for DataLoader.
         train_split (float): Proportion of data to use for training (if splitting).
         test_split (float): Proportion of data to use for testing (if splitting).
@@ -66,9 +67,6 @@ def load_data(
     Returns:
         dict[str, DataLoader]: A dictionary containing DataLoaders for 'train', 'val', and optionally 'test'.
     """
-    # Validate dataset directory
-    if not os.path.exists(dataset_dir):
-        raise ValueError(f"Dataset directory {dataset_dir} does not exist.")
     
     # Define transforms
 
@@ -96,24 +94,26 @@ def load_data(
     # Determine dataset structure
     loaders = {}
 
+    rootDir = DATASET_REGISTRY[dataset].getDir()
     # Determine how the data will be loaded
-    if all(os.path.isdir(os.path.join(dataset_dir, subdir)) for subdir in ['train', 'val']):
+    if all(os.path.isdir(os.path.join(rootDir, subdir)) for subdir in ['train', 'val']):
         # Pre-split dataset: train and val directories exist
-        train_dataset = datasets.ImageFolder(root=os.path.join(dataset_dir, 'train'), transform=train_transforms)
-        val_dataset = datasets.ImageFolder(root=os.path.join(dataset_dir, 'val'), transform=val_transforms)
-        loaders['train'] = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        loaders['val'] = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        train_dataset = DATASET_REGISTRY[dataset](mode='train', transform=train_transforms)
+        val_dataset = DATASET_REGISTRY[dataset](mode='val', transform=val_transforms)
+        loaders['train'] = DataLoader(train_dataset.dataset, batch_size=batch_size, shuffle=True)
+        loaders['val'] = DataLoader(val_dataset.dataset, batch_size=batch_size, shuffle=False)
 
         # Check for a 'test' folder
-        test_dir = os.path.join(dataset_dir, 'test')
+        test_dir = os.path.join(rootDir, 'test')
         if os.path.isdir(test_dir):
-            test_dataset = datasets.ImageFolder(root=test_dir, transform=test_transforms)
-            loaders['test'] = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+            test_dataset = DATASET_REGISTRY[dataset](mode='test', transform=test_transforms)
+            loaders['test'] = DataLoader(test_dataset.dataset, batch_size=batch_size, shuffle=False)
 
     else:
+        # TODO: Leverage for data that is not divided into folders already
         # Unsplit dataset: split manually
         logging.info("Detected unsplit dataset structure. Splitting dataset...")
-        dataset = datasets.ImageFolder(root=dataset_dir, transform=basic_transforms)
+        dataset = DATASET_REGISTRY[dataset](transform=basic_transforms)
         total_samples = len(dataset)
         train_size = int(train_split * total_samples)
         test_size = int(test_split * total_samples)
@@ -125,9 +125,9 @@ def load_data(
         
         # Apply augmentation to train dataset and create dataset
         train_dataset.dataset.transform = train_transforms  
-        loaders['train'] = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        loaders['val'] = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-        loaders['test'] = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+        loaders['train'] = DataLoader(train_dataset.dataset, batch_size=batch_size, shuffle=True)
+        loaders['val'] = DataLoader(val_dataset.dataset, batch_size=batch_size, shuffle=False)
+        loaders['test'] = DataLoader(test_dataset.dataset, batch_size=batch_size, shuffle=False)
 
     # Log all dataset statistics
     log_all_statistics(loaders)

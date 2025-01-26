@@ -1,18 +1,15 @@
-import os
-import torch
-import pandas as pd
-
 from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets
 
 
 class CpAnemiaDataset(Dataset):
 
-    def __init__(self):
-        rootDir = "data/cp-anemia/download/"
+    rootDir = "data/cp-anemia/download/"
+
+    def __init__(self, transform):
         self.name="Cp-Anemia"
-        self.dataset = datasets.ImageFolder(rootDir,
-                                             transform = None)
+        self.dataset = datasets.ImageFolder(self.rootDir,
+                                             transform = transform)
         self.class_to_idx = self.dataset.class_to_idx
 
     def __len__(self):
@@ -24,6 +21,10 @@ class CpAnemiaDataset(Dataset):
 
     def getName(self):
         return self.name
+    
+    @classmethod
+    def getDir(cls):
+        return cls.rootDir
 
 
 class TestCpAnemiaDataset():

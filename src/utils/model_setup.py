@@ -134,7 +134,7 @@ def setup_optimizer(model, optimizer: str, learning_rate: float):
 
     return optimizer
 
-def model_setup(model_name: str, 
+def training_setup(model_name: str, 
                 learning_rate: float, 
                 criterion: str, 
                 optimizer: str, 

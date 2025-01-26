@@ -1,8 +1,6 @@
 import torch
 import os
 
-# TODO: Test if it works
-
 class EarlyStopping:
     """
     Implements early stopping to terminate training when performance stops improving on monitored metrics.

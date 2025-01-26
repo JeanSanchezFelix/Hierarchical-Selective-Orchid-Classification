@@ -1,6 +1,7 @@
 import torch
 import logging
 
+# TODO: split up each callback into different files? Example: ModelCheckPoint.py, EarlyStopping.py, etc.
 class Callback:
     """
     Base class for all callbacks.
@@ -32,17 +33,17 @@ class ModelCheckpoint(Callback):
         monitor (str): Metric to monitor (e.g., 'val_loss').
         save_best_only (bool): If True, only saves the best model.
         mode (str): One of {'min', 'max'} to determine improvement direction.
-        filepath (str): File path to save the model checkpoint.
+        save_path (str): File path to save the model checkpoint.
         verbose (bool): If True, logs when a model is saved.
     """
-    def __init__(self, monitor='val_loss', save_best_only=True, mode='min', filepath='model_checkpoint.pth', verbose=False):
+    def __init__(self, monitor='val_loss', save_best_only=True, mode='min', save_path='model_checkpoint.pth', verbose=False):
         if mode not in ['min', 'max']:
             raise ValueError("Mode must be 'min' or 'max'")
         
         self.monitor = monitor
         self.save_best_only = save_best_only
         self.mode = mode
-        self.filepath = filepath
+        self.save_path = save_path
         self.verbose = verbose
         self.best_score = None
 
@@ -65,9 +66,9 @@ class ModelCheckpoint(Callback):
         return current > self.best_score
 
     def _save_model(self, model):
-        torch.save(model.state_dict(), self.filepath)
+        torch.save(model.state_dict(), self.save_path)
         if self.verbose:
-            logging.info(f"Model saved to {self.filepath}")
+            logging.info(f"Model saved to {self.save_path}")
 
 class EarlyStopping(Callback):
     """
@@ -81,7 +82,7 @@ class EarlyStopping(Callback):
         save_path (str): File path to save the best model.
         verbose (bool): If True, logs messages when Early Stop is triggered.
     """
-    def __init__(self, monitor='val_loss', patience=5, min_delta=0, mode='min', save_path='best_model.pth', verbose=False):
+    def __init__(self, monitor='val_loss', patience=5, min_delta=0.0, mode='min', save_path='best_model.pth', verbose=False):
         if mode not in ['min', 'max']:
             raise ValueError("Mode must be 'min' or 'max'")
         self.monitor = monitor
@@ -138,7 +139,7 @@ class ReduceLROnPlateau(Callback):
         patience (int): Number of epochs with no improvement before reducing the LR.
         min_lr (float): Minimum learning rate.
     """
-    def __init__(self, monitor='val_loss', factor=0.1, patience=5, min_delta=0, mode='min', min_lr=1e-6, verbose=False):
+    def __init__(self, monitor='val_loss', factor=0.1, patience=5, min_delta=0.0, mode='min', min_lr=1e-6, verbose=False):
         if mode not in ['min', 'max']:
             raise ValueError("Mode must be 'min' or 'max'")
         self.monitor = monitor

@@ -1,7 +1,13 @@
 import logging
-from utils.parsing import parse
-from utils.preprocessing import load_data
-from train.train import train_models  
+from src.utils import parse
+from src.utils import load_data
+from src.train import train_models 
+
+# Add the root directory to sys.path to access datasets
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+# # Add the src directory to sys.path to access utils
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 def main():
     """
@@ -14,7 +20,7 @@ def main():
     # Step 2: Load and preprocess the dataset
     logging.info("Loading and preprocessing data...")
     data_loaders = load_data(
-        dataset_dir=args['DATASET_DIR'],
+        dataset=args['DATASET'],
         batch_size=args['BATCH_SIZE'],
         train_split=args['TRAIN_SPLIT'],  
         test_split=args['TEST_SPLIT'],
