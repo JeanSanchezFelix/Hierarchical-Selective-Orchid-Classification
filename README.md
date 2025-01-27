@@ -1,58 +1,121 @@
-# Model Compression for Biomedical Applications
+# Model Compression Engine
 
-This repository contains the implementation of a project focusing on model compression techniques applied to biomedical datasets, such as anemia detection through conjunctiva pallor, monkeypox classification, and skin lesion detection. The project includes both pre-trained and custom models, as well as relevant Jupyter notebooks for experimentation.
+This repository contains the implementation of a model compression engine for biomedical applications, such as anemia detection through conjunctiva pallor, monkeypox classification, and skin lesion detection. The project includes pre-trained models, custom models, and utilities for training, evaluation, and preprocessing.
+
+---
 
 ## Project Structure
 
-- **data/**: This directory contains the image data for various biomedical use cases.
-  - **cp-anemia/**: Images related to anemia detection through conjunctiva pallor.
-    - `.gitignore`: Ignores unnecessary files.
-    - `test.jpeg, test.jpg, test.png`: Example test images for anemia classification.
-  - **monkeypox/**: Images used for classifying monkeypox.
-    - `.gitignore`: Ignores unnecessary files.
-    - `test.jpeg, test.jpg, test.png`: Example test images for monkeypox classification.
-  - **skin-lesions/**: Skin lesion images used for detecting skin cancer or other conditions.
-    - `.gitignore`: Ignores unnecessary files.
-    - `test.jpeg, test.jpg, test.png`: Example test images for skin lesion classification.
+```
+repository/
+├── data/
+│   ├── cp-anemia/
+│   ├── monkeypox/
+│   ├── skin-lesions/
+├── datasets/
+│   ├── CpAnemiaDataset.py
+│   ├── MonkeypoxDataset.py
+│   ├── SkinCancerDataset.py
+│   ├── registry.py
+├── models/
+├── notebooks/
+├── src/
+│   ├── train/
+│   │   ├── train.py
+│   ├── utils/
+│       ├── callbacks/
+│       │   ├── callbacks.py
+│       │   ├── registry.py
+│       ├── eval.py
+│       ├── metrics.py
+│       ├── model_setup.py
+│       ├── parsing.py
+│       ├── preprocessing.py
+├── saved_models/
+├── main.py
+├── requirements.txt
+```
 
-- **main/**: Contains the main code for model training and evaluation.
-  - `main.py`: The main script that runs the model training and compression tasks.
+### Key Components
 
-- **models/**: This folder contains the definitions of the models used or created for the project.
-  - `models.py`: Defines the architecture of the models used in the project.
+- **`data/`**: Contains the image datasets for various biomedical use cases:
+  - **cp-anemia/**: Images for anemia detection through conjunctiva pallor.
+  - **monkeypox/**: Images for monkeypox classification.
+  - **skin-lesions/**: Images for skin cancer and other skin condition detection.
 
-- **notebooks/**: Jupyter notebooks for experimentation and analysis.
-  - `jupyter_notebook.ipynb`: Jupyter notebook containing code for data preprocessing, model training, and evaluation.
-  - `jupyter_notebook-2.ipynb`: Additional notebook for further analysis and experimentation.
+- **`datasets/`**: Contains dataset classes and a registry for easy instantiation. Includes:
+  - `CpAnemiaDataset.py`: Handles the Cp-Anemia dataset.
+  - `MonkeypoxDataset.py`: Handles the Monkeypox dataset.
+  - `SkinCancerDataset.py`: Handles the Skin Lesions dataset.
+  - `registry.py`: Maps dataset names to their respective classes.
 
-- **transfer_learning/**: Scripts for implementing transfer learning using pre-trained models.
-  - `transfer_learning.py`: Implements transfer learning techniques for different datasets.
+- **`models/`**: Directory for model definitions (currently empty, for user customization).
 
-- **utils/**: Utility scripts used throughout the project.
-  - `eval.py`: Code for model evaluation.
-  - `metrics.py`: Custom metrics for model performance evaluation.
-  - `preprocessing.py`: Code for preprocessing the input data before feeding it to the models.
-  - `train.py`: Script for training the models.
-  - `.gitignore`: Ignores unnecessary files in the utils folder.
+- **`notebooks/`**: Jupyter notebooks for experimentation and analysis.
 
-- **README.md**: This file, providing an overview of the repository structure and instructions on how to use the code.
+- **`src/`**:
+  - **`train/`**: Contains the `train.py` script for model training.
+  - **`utils/`**: Provides utility scripts for training and evaluation:
+    - `callbacks/`: Contains callbacks for model checkpointing, early stopping, and learning rate scheduling.
+    - `eval.py`: Handles model evaluation and metric calculation.
+    - `metrics.py`: Provides custom metrics and visualization utilities.
+    - `model_setup.py`: Configures models, optimizers, and loss functions.
+    - `parsing.py`: Parses command-line arguments and configuration files.
+    - `preprocessing.py`: Handles data loading, augmentation, and splitting.
 
-- **requirements.txt**: Lists all the required Python libraries and dependencies for running the project.
+- **`saved_models/`**: Directory to store trained models and checkpoints.
+
+- **`main.py`**: Entry point for training and evaluation workflows.
+
+- **`requirements.txt`**: Lists all required Python libraries and dependencies.
+
+---
 
 ## How to Use
 
-1. Clone the repository:
-  ```bash
-  git clone https://github.com/yourusername/model-compression.git
-  cd model-compression
-  ```
+### 1. Clone the Repository
+```bash
+git clone https://github.com/yourusername/model-compression.git
+cd model-compression
+```
 
-2. Install the dependencies:
-  ```bashbash
-  pip install -r requirements.txt
-  ```
-3. Explore the Jupyter notebooks in the `notebooks/` directory to get started with training and evaluation on your own datasets.
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
-4. For transfer learning, refer to the `transfer_learning.py` script in the `transfer_learning/` folder.
+### 3. Train a Model
+Run the `main.py` script to train and evaluate a model. Use command-line arguments or configuration files for customization.
 
-5. Use `main.py` for the overall execution of model training and compression.
+#### Example Usage with Command-line Arguments
+```bash
+python main.py \
+    --model_name mobilenet_v2 \
+    --epochs 10 \
+    --dataset SkinCancer \
+    --batch_size 32 \
+    --learning_rate 0.001 \
+    --train_split 0.8 \
+    --test_split 0.1 \
+    --img_size 224 \
+    --data_augmentation 1 \
+    --callbacks ModelCheckpoint EarlyStopping \
+    --save_dir ./saved_models
+```
+
+#### Example Usage with Configuration File
+```bash
+python main.py --config_file config.yaml
+```
+
+### 4. Explore Jupyter Notebooks
+Use the notebooks in the `notebooks/` directory for further experimentation and analysis.
+
+---
+
+## Notes
+
+- Ensure that datasets are correctly structured under the `data/` directory.
+- The `main.py` script integrates various utilities, including callbacks, argument parsing, and model training, for an end-to-end training pipeline.
+- Refer to the individual module documentation for detailed information on datasets, utilities, and training workflows.
+
