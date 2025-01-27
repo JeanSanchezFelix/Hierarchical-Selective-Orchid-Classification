@@ -100,6 +100,10 @@ python main.py \
     --img_size 224 \
     --data_augmentation 1 \
     --callbacks ModelCheckpoint EarlyStopping \
+    --ModelCheckpoint_monitor val_loss \
+    --ModelCheckpoint_save_best_only \
+    --EarlyStopping_patience 5 \
+    --ReduceLROnPlateau_factor 0.1 \
     --save_dir ./saved_models
 ```
 
@@ -107,6 +111,16 @@ python main.py \
 ```bash
 python main.py --config_file config.yaml
 ```
+
+#### Example Usge Combining Configuration File and Command-line Arguments
+```bash
+python main.py --config_file config.yaml \
+    --epochs 20 \
+    --learning_rate 0.0005
+```
+- In this example, values from `config.yaml` will be overridden by the `epochs` and `learning_rate` arguments provided via the command line.
+
+---
 
 ### 4. Explore Jupyter Notebooks
 Use the notebooks in the `notebooks/` directory for further experimentation and analysis.
