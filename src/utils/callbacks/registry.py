@@ -36,7 +36,7 @@ def process_callbacks(args: dict) -> dict[str, Callback]:
                 monitor=args['ModelCheckpoint_monitor'], 
                 save_best_only=args['ModelCheckpoint_save_best_only'], 
                 mode=args['ModelCheckpoint_mode'],
-                save_path=f"{args['save_dir']}/best_model.pth",   
+                save_path=f"{args['save_dir']}/{args['model_name']}_best_model.pth",   
                 verbose=args['ModelCheckpoint_verbose'])
         elif name == "EarlyStopping":
             callbacks[name] = CALLBACK_REGISTRY[name](
@@ -44,7 +44,7 @@ def process_callbacks(args: dict) -> dict[str, Callback]:
                 patience=args['EarlyStopping_patience'], 
                 min_delta=args['EarlyStopping_min_delta'],
                 mode=args['EarlyStopping_mode'], 
-                save_path=f"{args['save_dir']}/best_model.pth", 
+                save_path=f"{args['save_dir']}/{args['model_name']}_best_model.pth", 
                 verbose=args['EarlyStopping_verbose'])
         elif name == "ReduceLROnPlateau":
             callbacks[name] = CALLBACK_REGISTRY[name](

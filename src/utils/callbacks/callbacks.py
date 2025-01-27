@@ -54,19 +54,25 @@ class ModelCheckpoint(Callback):
             return
 
         if not self.save_best_only:
-            self._save_model(logs["model"])
+            self._save_model(logs)
         else:
             if self.best_score is None or self._is_improvement(current):
                 self.best_score = current
-                self._save_model(logs["model"])
+                self._save_model(logs)
 
     def _is_improvement(self, current):
         if self.mode == 'min':
             return current < self.best_score
         return current > self.best_score
 
-    def _save_model(self, model):
-        torch.save(model.state_dict(), self.save_path)
+    def _save_model(self, logs):
+        torch.save({"model": logs["model"].state_dict(),
+                    "batch_size": logs["batch_size"],
+                    "learning_rate": logs["learning_rate"],
+                    "criterion": str(type(logs["criterion"])),
+                    "optimizer": logs["optimizer"].state_dict(),
+                    "epoch": logs["epoch"],
+                    }, self.save_path)
         if self.verbose:
             logging.info(f"Model saved to {self.save_path}")
 
@@ -104,11 +110,11 @@ class EarlyStopping(Callback):
 
         if self.best_score is None:
             self.best_score = current
-            self._save_model(logs["model"])
+            self._save_model(logs)
         elif self._is_improvement(current):
             self.best_score = current
             self.wait = 0
-            self._save_model(logs["model"])
+            self._save_model(logs)
         else:
             self.wait += 1
             if self.verbose:
@@ -123,8 +129,14 @@ class EarlyStopping(Callback):
             return current < self.best_score - self.min_delta
         return current > self.best_score + self.min_delta
 
-    def _save_model(self, model):
-        torch.save(model.state_dict(), self.save_path)
+    def _save_model(self, logs):
+        torch.save({"model": logs["model"].state_dict(),
+                    "batch_size": logs["batch_size"],
+                    "learning_rate": logs["learning_rate"],
+                    "criterion": str(type(logs["criterion"])),
+                    "optimizer": logs["optimizer"].state_dict(),
+                    "epoch": logs["epoch"],
+                    }, self.save_path)
         if self.verbose:
             logging.info(f"Model saved to {self.save_path}")
 

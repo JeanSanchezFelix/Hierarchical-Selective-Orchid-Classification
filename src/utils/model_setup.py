@@ -23,47 +23,47 @@ def setup_model(model_name: str, pretrained_weights: bool, num_classes: int) -> 
     if model_name.lower() == "mobilenet_v2":
         model = models.mobilenet_v2(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(num_features, len(num_classes))
+        model.classifier[1] = nn.Linear(num_features, num_classes)
     elif model_name.lower() == "resnet18":
         model = models.resnet18(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.fc.in_features
-        model.fc = nn.Linear(num_features, len(num_classes))
+        model.fc = nn.Linear(num_features, num_classes)
     elif model_name.lower() in ["resnet34", "resnet50", "resnet101", "resnet152"]:
         model = getattr(models, model_name.lower())(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.fc.in_features
-        model.fc = nn.Linear(num_features, len(num_classes))
+        model.fc = nn.Linear(num_features, num_classes)
     elif model_name.lower() in ["mobilenet_v3_large", "mobilenet_v3_small"]:
         model = getattr(models, model_name.lower())(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.classifier[0].in_features
-        model.classifier[0] = nn.Linear(num_features, len(num_classes))
+        model.classifier[0] = nn.Linear(num_features, num_classes)
     elif model_name.lower() in ["efficientnet_b0", "efficientnet_b1", "efficientnet_b2", "efficientnet_b3",
                                 "efficientnet_b4", "efficientnet_b5", "efficientnet_b6", "efficientnet_b7"]:
         model = getattr(models, model_name.lower())(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(num_features, len(num_classes))
+        model.classifier[1] = nn.Linear(num_features, num_classes)
     elif model_name.lower() in ["vgg11", "vgg13", "vgg16", "vgg19", "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn"]:
         model = getattr(models, model_name.lower())(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.classifier[0].in_features
-        model.classifier[0] = nn.Linear(num_features, len(num_classes))
+        model.classifier[0] = nn.Linear(num_features, num_classes)
     elif model_name.lower() in ["densenet121", "densenet161", "densenet169", "densenet201"]:
         model = getattr(models, model_name.lower())(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.classifier.in_features
-        model.classifier = nn.Linear(num_features, len(num_classes))
+        model.classifier = nn.Linear(num_features, num_classes)
     elif model_name.lower() in ["squeezenet1_0", "squeezenet1_1"]:
         model = getattr(models, model_name.lower())(weights=None if pretrained_weights else 'DEFAULT')
-        model.classifier[1] = nn.Conv2d(model.classifier[1].in_channels, len(num_classes), kernel_size=(1, 1))
+        model.classifier[1] = nn.Conv2d(model.classifier[1].in_channels, num_classes, kernel_size=(1, 1))
     elif model_name.lower() in ["shufflenet_v2_x0_5", "shufflenet_v2_x1_0", "shufflenet_v2_x1_5", "shufflenet_v2_x2_0"]:
         model = getattr(models, model_name.lower())(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.fc.in_features
-        model.fc = nn.Linear(num_features, len(num_classes))
+        model.fc = nn.Linear(num_features, num_classes)
     elif model_name.lower() == "inception_v3":
         model = models.inception_v3(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.fc.in_features
-        model.fc = nn.Linear(num_features, len(num_classes))
+        model.fc = nn.Linear(num_features, num_classes)
     elif model_name.lower() == "alexnet":
         model = models.alexnet(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(num_features, len(num_classes))
+        model.classifier[1] = nn.Linear(num_features, num_classes)
     else:
         logging.error(f"Unsupported model: {model_name}")
         raise ValueError(f"Unsupported model: {model_name}")

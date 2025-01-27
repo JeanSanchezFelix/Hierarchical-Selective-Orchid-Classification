@@ -2,7 +2,7 @@ import os
 import logging
 from collections import Counter
 from torch.utils.data import Dataset, DataLoader, random_split
-from torchvision import datasets, transforms
+from torchvision import transforms
 from datasets.registry import DATASET_REGISTRY
 
 def log_dataset_statistics(dataset, dataset_name: str):

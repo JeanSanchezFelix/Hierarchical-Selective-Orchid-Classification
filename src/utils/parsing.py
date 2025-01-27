@@ -220,6 +220,8 @@ def parse() -> dict[str, int | str | list]:
 
     # Combine arguments (CLI > Config File > Default)
     combined_args = {**config_args, **vars(args)}
+
+    combined_args['save_dir'] = os.path.join(combined_args['save_dir'], combined_args['dataset'])
     
     # Configure logging
     configure_logging(combined_args['logging'], combined_args['save_dir'])

@@ -43,7 +43,7 @@ def train_models(
     val_loader = data_loaders["val"]
     # test_loader = data_loaders["test"]
     logging.info("Datasets loaded successfully.")
-    num_classes = train_loader.dataset.classes
+    num_classes = len(train_loader.dataset.classes)
 
     model, criterion, optimizer = training_setup(model_name, learning_rate, criterion, optimizer, pretrained_weights, num_classes)
 
@@ -74,7 +74,7 @@ def train_models(
     logging.info(f"Model moved to device: {device}")
 
     # Initialize variables for checkpointing
-    best_model_path = os.path.join(save_dir, f"{model_name}_best.pth")
+    best_model_path = os.path.join(save_dir, f"{model_name}_best_model.pth")
     os.makedirs(save_dir, exist_ok=True)
     logging.info(f"Training will save checkpoints to: {save_dir}")
 
@@ -85,7 +85,7 @@ def train_models(
     logging.info("Starting training...")
     start = time.time()
 
-    loss_dict = train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs, device, callbacks)
+    loss_dict = train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion, optimizer, epochs, device, callbacks)
 
     time_elapsed = time.time() - start
     logging.info(f"Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s")
@@ -95,7 +95,8 @@ def train_models(
         callback.on_train_end(logs={"model": model, "optimizer": optimizer})
 
     # Load the best model weights before returning
-    model.load_state_dict(torch.load(best_model_path, weights_only=False))
+    model_data = torch.load(best_model_path, weights_only=False)
+    model.load_state_dict(model_data["model"])
     logging.info(f"Best model weights loaded from: {best_model_path}")
 
     plot_train_val_curve(loss_dict, save_path=os.path.join(save_dir, "curve.png"))
@@ -105,7 +106,7 @@ def train_models(
 
     return model
 
-def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs, device, callbacks) -> dict[str,list]:
+def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion, optimizer, epochs, device, callbacks) -> dict[str,list]:
     """
     Train and evaluate the model while displaying metrics with a progress bar.
 
@@ -113,6 +114,7 @@ def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, ep
         model (torch.nn.Module): The model to train.
         train_loader (DataLoader): DataLoader for training data.
         val_loader (DataLoader): DataLoader for validation data.
+        learning_rate (float): Learning rate used for logging
         criterion: Loss function.
         optimizer: Optimization algorithm.
         epochs (int): Number of epochs.
@@ -127,7 +129,12 @@ def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, ep
         logging.info(f"Epoch {epoch + 1}/{epochs}")
         logging.info("-" * 10)
 
-        logs = {"epoch": epoch, "model": model, "optimizer": optimizer}
+        logs = {"model": model, 
+                "batch_size": train_loader.batch_size, 
+                "learning_rate": learning_rate, 
+                "optimizer": optimizer,
+                "criterion": criterion,
+                "epoch": epoch}
 
         # Trigger on_epoch_start callbacks
         for callback in callbacks:
@@ -185,12 +192,6 @@ def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, ep
             logging.info(f"{phase.capitalize()} Loss: {epoch_loss:.4f}")
             logging.info(f"{phase.capitalize()} Metrics: " + ", ".join([f"{key}: {value:.4g}" for key, value in metrics.items()]))
             logs.update({f"{phase}_loss": epoch_loss, **metrics})
-
-            # Checkpoint for the best model
-            # if phase == 'val' and metrics['Accuracy'] > best_acc:
-            #     best_acc = metrics['Accuracy']
-            #     torch.save(model.state_dict(), best_model_path)
-            #     logging.info(f"Checkpoint: Best model saved with accuracy {best_acc:.4f}")
 
         # Trigger on_epoch_end callbacks
         for callback in callbacks:

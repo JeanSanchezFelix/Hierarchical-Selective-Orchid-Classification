@@ -1,6 +1,5 @@
 import logging
-from src.utils import parse
-from src.utils import load_data
+from src.utils import parse, load_data, evaluate
 from src.train import train_models 
 
 # Add the root directory to sys.path to access datasets
@@ -41,6 +40,14 @@ def main():
         callbacks=args['CALLBACKS'],
         pretrained_weights=args['PRETRAINED_WEIGHTS']
     )
+
+    # Step 4: Evaluate models
+
+    evaluate(f"{args['SAVE_DIR']}/{args['DATASET']}/{args['MODEL_NAME']}_best_model.pth", 
+        args['IMG_SIZE'], args['DATASET'], 
+        f"{args['SAVE_DIR']}/{args['DATASET']}"
+    )
+
 
     logging.info("Training completed successfully.")
 
