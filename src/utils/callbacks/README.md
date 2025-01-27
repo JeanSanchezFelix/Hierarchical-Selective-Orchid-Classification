@@ -4,6 +4,14 @@ The `callbacks` module provides a set of utilities to manage various aspects of 
 
 ---
 
+## Folder Structure
+```
+callbacks/
+├── __init__.py
+├── callbacks.py 
+├── registry.py 
+```
+
 ## Contents
 
 - [Overview of Callbacks](#overview-of-callbacks)

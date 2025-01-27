@@ -10,14 +10,6 @@ from datasets.registry import DATASET_REGISTRY
 from src.utils.model_setup import setup_model
 from src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_radar_chart
 
-import os
-import logging
-import numpy as np
-from tqdm import tqdm
-import torch
-from torch.utils.data import DataLoader
-from torchvision import transforms
-
 def evaluate(model_path: str, img_size: int, dataset: str, save_dir: str = None):
     """
     Perform inference on the test dataset and evaluate model performance.

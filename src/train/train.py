@@ -204,6 +204,8 @@ def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion
     logging.info(f"Best validation accuracy: {best_acc:.4f}")
     return loss_dict
 
+# TODO: Work in progress (finish)
+
 def cross_validation(
     model_name: str,
     dataset,

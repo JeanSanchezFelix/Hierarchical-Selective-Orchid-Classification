@@ -24,13 +24,6 @@ def process_callbacks(args: dict) -> dict[str, Callback]:
         if name not in CALLBACK_REGISTRY:
             raise ValueError(f"Callback '{name}' is not recognized. Available callbacks: {list(CALLBACK_REGISTRY.keys())}")
         
-        # Instantiate callback with default or user-specified parameters
-        # if name == "EarlyStopping":
-        #     callbacks.append(CALLBACK_REGISTRY[name](monitor="val_loss", patience=3, mode="min", save_path=f"{save_dir}/best_model.pth", verbose=False))
-        # elif name == "ReduceLROnPlateau":
-        #     callbacks.append(CALLBACK_REGISTRY[name](monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6, verbose=False))
-        # elif name == "ModelCheckpoint":
-        #     callbacks.append(CALLBACK_REGISTRY[name](monitor="val_loss", save_best_only=True, mode="min", filepath=f"{save_dir}/best_model.pth", verbose=False))
         if name == "ModelCheckpoint":
             callbacks[name] = CALLBACK_REGISTRY[name](
                 monitor=args['ModelCheckpoint_monitor'], 
