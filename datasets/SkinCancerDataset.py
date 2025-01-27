@@ -1,16 +1,31 @@
 from torch.utils.data import Dataset
 from torchvision import datasets
 
+cancer_classes = ["Squamous cell carcinoma", "Melanoma", "Basal cell carcinoma"]
+other_classes = [
+    "Vascular lesions", "Monkeypox", "Actinic keratoses", "Melanocytic nevi",
+    "Measles", "Healthy", "HFMD", "Cowpox", "Dermatofibroma", "Chickenpox",
+    "Benign keratosis-like lesions", "Actinic keratoses"
+]
+
 
 class SkinCancerDataset(Dataset):
 
     rootDir = "data/skin-lesions/download/"
 
-    def __init__(self, transform, mode="train"):
+    def __init__(self, transform, mode="train", binary_mapping=False):
         self.name="Skin Lesions"
-        self.dataset = datasets.ImageFolder(self.rootDir + mode,
-                                             transform = transform)
+        self.dataset = datasets.ImageFolder(self.rootDir + mode, transform = transform)
         self.class_to_idx = self.dataset.class_to_idx
+
+        if binary_mapping:
+            label_mapping = {class_name: 1 for class_name in cancer_classes}
+            label_mapping.update({class_name: 0 for class_name in other_classes})
+            original_classes = self.dataset.classes  # Class names in the dataset
+            class_to_binary_label = {original_classes.index(cls): label_mapping[cls] for cls in label_mapping}
+
+            # Apply the label mapping dynamically to the dataset
+            self.dataset.targets = [class_to_binary_label[target] for target in self.dataset.targets]
 
     def __len__(self):
         return len(self.dataset)
