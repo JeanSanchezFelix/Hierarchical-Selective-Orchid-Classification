@@ -1,7 +1,8 @@
 # python_version==3.12
-# torch==2.5.1+cu124
-# torchaudio==2.5.1+cu124
-# torchvision==0.20.1+cu124
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.5.1
+torchaudio==2.5.1
+torchvision==0.20.1
 tqdm==4.67.1
 pyyaml==6.0.2
 # numpy==2.2.1
