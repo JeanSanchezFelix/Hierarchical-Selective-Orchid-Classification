@@ -23,7 +23,7 @@ def setup_model(model_name: str, pretrained_weights: bool, num_classes: int) -> 
     if model_name.lower() == "mobilenet_v2":
         model = models.mobilenet_v2(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(num_features, num_classes)
+        model.classifier[1] = nn.Linear(num_features, 1) if num_classes == 2 else nn.Linear(num_features, num_classes)
     elif model_name.lower() == "resnet18":
         model = models.resnet18(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.fc.in_features

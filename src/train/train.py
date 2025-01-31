@@ -124,6 +124,7 @@ def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion
     """
     loss_dict = {'train': [], 'val': []}
     best_acc = 0.0
+    num_classes = len(train_loader.dataset.classes)
 
     for epoch in range(epochs):
         logging.info(f"Epoch {epoch + 1}/{epochs}")
@@ -153,14 +154,25 @@ def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion
             with tqdm(total=len(data_loader), desc=f"{phase.capitalize()} Epoch {epoch + 1}/{epochs}") as pbar:
                 for inputs, labels in data_loader:
                     inputs, labels = inputs.to(device), labels.to(device)
+                    # labels = labels.float().unsqueeze(-1)
                     optimizer.zero_grad()
 
                     with torch.set_grad_enabled(phase == 'train'):
                         outputs = model(inputs)
-                        _, preds = torch.max(outputs, 1)
-                        loss = criterion(outputs, labels)
-                        probs = torch.nn.functional.softmax(outputs, dim=1)
 
+                        if num_classes == 2:
+                            probs = torch.sigmoid(outputs)         # sigmoid for binary classification
+                            loss = criterion(probs, labels)
+                            preds = 0 if probs < 0.50 else 1
+                        # TODO: add more loss functions that do not require softmax activation function in the end
+                        elif isinstance(criterion, torch.nn.CrossEntropyLoss):
+                            _, preds = torch.max(outputs, 1)
+                            loss = criterion(outputs, labels)
+                            probs = torch.softmax(outputs, dim=1)  # softmax for multi-class classification
+                        else:
+                            _, preds = torch.max(outputs, 1)
+                            loss = criterion(outputs, labels)
+                        
                         if phase == 'train':
                             loss.backward()
                             optimizer.step()

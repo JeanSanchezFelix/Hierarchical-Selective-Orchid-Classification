@@ -73,7 +73,10 @@ def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.devi
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
-            probs = torch.nn.functional.softmax(outputs, dim=1)
+            if len(class_labels) == 2:
+                probs = torch.sigmoid(outputs)         # sigmoid for binary classification
+            else:
+                probs = torch.softmax(outputs, dim=1)  # softmax for multi-class classification
 
             ground_truths.extend(labels.cpu().numpy())
             predictions.extend(preds.cpu().numpy())

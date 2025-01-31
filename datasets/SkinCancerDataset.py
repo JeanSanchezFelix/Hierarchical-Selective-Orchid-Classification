@@ -13,19 +13,30 @@ class SkinCancerDataset(Dataset):
 
     rootDir = "data/skin-lesions/download/"
 
-    def __init__(self, transform, mode="train", binary_mapping=False):
+    def __init__(self, transform, mode="train", binary_mapping=True):
         self.name="Skin Lesions"
-        self.dataset = datasets.ImageFolder(self.rootDir + mode, transform = transform)
-        self.class_to_idx = self.dataset.class_to_idx
+        self.dataset = datasets.ImageFolder(self.rootDir + mode, transform = transform)        
 
         if binary_mapping:
             label_mapping = {class_name: 1 for class_name in cancer_classes}
             label_mapping.update({class_name: 0 for class_name in other_classes})
-            original_classes = self.dataset.classes  # Class names in the dataset
+            original_classes = self.dataset.classes                                                             # Class names in the dataset
             class_to_binary_label = {original_classes.index(cls): label_mapping[cls] for cls in label_mapping}
-
             # Apply the label mapping dynamically to the dataset
             self.dataset.targets = [class_to_binary_label[target] for target in self.dataset.targets]
+            self.dataset.classes = ['Other', 'Cancer']
+            self.class_to_idx = {'Other': 0, 'Cancer': 1}
+            samples = []
+            # samples = self.dataset.samples
+            for sample in self.dataset.samples:
+                if any(sample[0].__contains__(cancer_type) for cancer_type in cancer_classes):
+                    samples.append((sample[0], 1))
+                else:
+                    samples.append((sample[0], 0))
+                
+            self.dataset.samples = samples
+        else:
+            self.class_to_idx = self.dataset.class_to_idx
 
     def __len__(self):
         return len(self.dataset)
