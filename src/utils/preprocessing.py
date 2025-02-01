@@ -4,6 +4,7 @@ from collections import Counter
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 from datasets.registry import DATASET_REGISTRY
+from src.utils.imbalance import get_weighted_sampler
 
 def log_dataset_statistics(dataset, dataset_name: str):
     """
@@ -100,7 +101,8 @@ def load_data(
         # Pre-split dataset: train and val directories exist
         train_dataset = DATASET_REGISTRY[dataset](mode='train', transform=train_transforms)
         val_dataset = DATASET_REGISTRY[dataset](mode='val', transform=val_transforms)
-        loaders['train'] = DataLoader(train_dataset.dataset, batch_size=batch_size, shuffle=True)
+        sampler = get_weighted_sampler(train_dataset)
+        loaders['train'] = DataLoader(train_dataset.dataset, batch_size=batch_size, sampler=sampler, shuffle=False)
         loaders['val'] = DataLoader(val_dataset.dataset, batch_size=batch_size, shuffle=False)
 
         # Check for a 'test' folder

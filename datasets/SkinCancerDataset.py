@@ -13,7 +13,7 @@ class SkinCancerDataset(Dataset):
 
     rootDir = "data/skin-lesions/download/"
 
-    def __init__(self, transform, mode="train", binary_mapping=False):
+    def __init__(self, transform, mode="train", binary_mapping=True):
         self.name="Skin Lesions"
         self.dataset = datasets.ImageFolder(self.rootDir + mode, transform = transform)
 
