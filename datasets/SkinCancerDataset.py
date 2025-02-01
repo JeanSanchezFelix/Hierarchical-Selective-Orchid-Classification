@@ -13,9 +13,9 @@ class SkinCancerDataset(Dataset):
 
     rootDir = "data/skin-lesions/download/"
 
-    def __init__(self, transform, mode="train", binary_mapping=True):
+    def __init__(self, transform, mode="train", binary_mapping=False):
         self.name="Skin Lesions"
-        self.dataset = datasets.ImageFolder(self.rootDir + mode, transform = transform)        
+        self.dataset = datasets.ImageFolder(self.rootDir + mode, transform = transform)
 
         if binary_mapping:
             label_mapping = {class_name: 1 for class_name in cancer_classes}

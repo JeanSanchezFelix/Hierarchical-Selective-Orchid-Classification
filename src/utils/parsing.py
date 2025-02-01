@@ -115,7 +115,8 @@ def parse() -> dict[str, int | str | list]:
             - DATASET (str): Dataset that will be used for training.
             - BATCH_SIZE (int): Batch size for training.
             - LEARNING_RATE (float): Learning rate for the optimizer.
-            - OPTIMIZER (str): Optimizer to use ('adam' or 'sgd').
+            - CRITERION (str): Criterion to use.
+            - OPTIMIZER (str): Optimizer to use.
             - TRAIN_SPLIT (float): Proportion of data used for training (0.0 - 1.0).
             - TEST_SPLIT (float): Proportion of data used for testing (0.0 - 1.0).
             - IMG_SIZE (int): Image size for input to the model (e.g., 224 for 224x224 images).
