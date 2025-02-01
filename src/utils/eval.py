@@ -51,6 +51,51 @@ def evaluate(model_path: str, img_size: int, dataset: str, save_dir: str = None)
 
     test_inference(model, test_loader, device, save_dir)
 
+def compute_loss_and_predictions(outputs, labels, criterion=None):
+    """
+    Computes loss (if criterion is provided) and generates predictions.
+
+    Parameters:
+        outputs (torch.Tensor): Raw model outputs (logits).
+        labels (torch.Tensor): Ground truth labels.
+        criterion (nn.Module, optional): Loss function. If None, loss is not computed.
+
+    Returns:
+        loss (torch.Tensor or None): Computed loss (if criterion is provided).
+        probs (torch.Tensor): Predicted probabilities.
+        preds (torch.Tensor): Final predicted class labels.
+    """
+    loss = None                                                     # Default to None in case of inference
+
+    if isinstance(criterion, nn.BCELoss):                           # Binary Cross-Entropy Loss
+        probs = torch.sigmoid(outputs)                              # Convert logits to probabilities
+        if criterion is not None:                                   # Compute loss only in training mode
+            loss = criterion(probs, labels.float().unsqueeze(1))
+        preds = (probs >= 0.5).float()                              # Apply 0.5 threshold for binary classification
+
+    elif isinstance(criterion, nn.BCEWithLogitsLoss):               # More Stable BCE
+        if criterion is not None:
+            loss = criterion(outputs, labels.float().unsqueeze(1))  # BCEWithLogitsLoss expects raw logits
+        probs = torch.sigmoid(outputs)                              # Convert logits to probabilities for evaluation
+        preds = (probs >= 0.5).float()                              # Threshold at 0.5
+
+    elif isinstance(criterion, nn.CrossEntropyLoss):                # Multi-Class Cross-Entropy Loss
+        if criterion is not None:
+            loss = criterion(outputs, labels)                       # CrossEntropyLoss expects raw logits
+        probs = torch.softmax(outputs, dim=1)                       # Convert logits to probabilities
+        _, preds = torch.max(outputs, 1)                            # Get predicted class index
+
+    elif isinstance(criterion, nn.NLLLoss):                         # Negative Log Likelihood Loss
+        outputs = torch.log_softmax(outputs, dim=1)                 # Convert logits to log probabilities
+        if criterion is not None:
+            loss = criterion(outputs, labels)
+        probs = torch.exp(outputs)                                  # Convert log probabilities back to probabilities
+        _, preds = torch.max(outputs, 1)
+
+    else:
+        raise ValueError(f"Unsupported loss function: {type(criterion)}")
+
+    return loss, probs, preds
 
 def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.device, save_dir: str):
     """
@@ -64,7 +109,7 @@ def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.devi
     """
     logging.info("Starting inference on the test dataset...")
     
-    model.eval()  # Set the model to evaluation mode
+    model.eval()                                                    # Set the model to evaluation mode
     predictions, ground_truths, probabilities = [], [], []
     class_labels = test_loader.dataset.classes
 
@@ -72,11 +117,8 @@ def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.devi
         for inputs, labels in tqdm(test_loader, desc="Inference Progress"):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
-            _, preds = torch.max(outputs, 1)
-            if len(class_labels) == 2:
-                probs = torch.sigmoid(outputs)         # sigmoid for binary classification
-            else:
-                probs = torch.softmax(outputs, dim=1)  # softmax for multi-class classification
+            
+            _, probs, preds = compute_loss_and_predictions(outputs, labels, criterion=None)  
 
             ground_truths.extend(labels.cpu().numpy())
             predictions.extend(preds.cpu().numpy())

@@ -57,6 +57,13 @@ The `eval.py` script handles the evaluation of trained models on a test dataset.
     - `dataset`: Name of the dataset to evaluate.
     - `save_dir`: Directory to save evaluation plots (optional).
 
+- **`compute_loss_and_predictions(outputs, labels, criterion=None)`**:
+  - Computes loss (if criterion is provided) and generates predictions.
+  - Parameters:
+    - `outputs`: Raw model outputs (logits).
+    - `labels`: Ground truth labels.
+    - `criterion`: Loss function. If None, loss is not computed.
+
 - **`test_inference(model: nn.Module, test_loader: DataLoader, device: torch.device, save_dir: str)`**:
   - Runs inference on the test dataset and computes metrics.
   - Parameters:

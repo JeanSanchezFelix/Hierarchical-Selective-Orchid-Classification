@@ -8,7 +8,7 @@ from tqdm import tqdm
 from sklearn.model_selection import KFold
 from src.utils.metrics import plot_train_val_curve, calculate_metrics
 from src.utils.model_setup import training_setup
-from src.utils.eval import test_inference
+from src.utils.eval import test_inference, compute_loss_and_predictions
 
 def train_models(
     model_name: str,
@@ -154,24 +154,12 @@ def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion
             with tqdm(total=len(data_loader), desc=f"{phase.capitalize()} Epoch {epoch + 1}/{epochs}") as pbar:
                 for inputs, labels in data_loader:
                     inputs, labels = inputs.to(device), labels.to(device)
-                    # labels = labels.float().unsqueeze(-1)
                     optimizer.zero_grad()
 
                     with torch.set_grad_enabled(phase == 'train'):
                         outputs = model(inputs)
 
-                        if num_classes == 2:
-                            probs = torch.sigmoid(outputs)         # sigmoid for binary classification
-                            loss = criterion(probs, labels)
-                            preds = 0 if probs < 0.50 else 1
-                        # TODO: add more loss functions that do not require softmax activation function in the end
-                        elif isinstance(criterion, torch.nn.CrossEntropyLoss):
-                            _, preds = torch.max(outputs, 1)
-                            loss = criterion(outputs, labels)
-                            probs = torch.softmax(outputs, dim=1)  # softmax for multi-class classification
-                        else:
-                            _, preds = torch.max(outputs, 1)
-                            loss = criterion(outputs, labels)
+                        loss, probs, preds = compute_loss_and_predictions(outputs, labels, criterion)
                         
                         if phase == 'train':
                             loss.backward()
