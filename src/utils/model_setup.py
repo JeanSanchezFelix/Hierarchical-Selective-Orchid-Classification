@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim
 from torch.utils.data import DataLoader
 from torchvision import models
-from src.utils.imbalance import calculate_model_weights
+from src.utils.data_imbalance import calculate_model_weights
 
 def setup_model(model_name: str, pretrained_weights: bool, num_classes: int) -> nn.Module:
     """
