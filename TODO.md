@@ -11,6 +11,11 @@ This file outlines future improvements and additions to the project. Below are t
 3. **Ensure Consistent Default Values**: Standardize default values across the codebase.
 4. **Improve Logging**: Add more granular and consistent logging throughout the scripts.
 5. **Add Unit Tests**: Implement unit tests for critical components (e.g., datasets, training pipeline, callbacks).
+   - Create a Parent Unit test class that the other inherit from
+6. **Clean Code**: Implement unit tests for critical components (e.g., datasets, training pipeline, callbacks).
+7. **Add Comments**: Add detailed comments in the code.
+8. **Improve naming convention**: Improve the naming of some functions and variables.
+9. **Update README Files**: Keep the ReadMe files up to date.
 
 ---
 
@@ -20,6 +25,7 @@ This file outlines future improvements and additions to the project. Below are t
 2. **Implement Lazy Loading**: Optimize memory usage for large datasets by implementing lazy loading.
 3. **Extend Dataset Registry**: Add support for additional biomedical datasets.
 4. **Dataset Statistics**: Improve the dataset logging to include more detailed class statistics (e.g., mean and variance of pixel intensities).
+5. **Dataset class leverage**: Refactor other datasetss to inherit from CustomClass.
 
 ---
 
