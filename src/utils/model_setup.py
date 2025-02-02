@@ -71,7 +71,7 @@ def setup_model(model_name: str, pretrained_weights: bool, num_classes: int) -> 
 
     return model
 
-def setup_criterion(criterion: str, dataloader: torch.utils.data.Dataloader, class_weights: bool) -> nn.Module:
+def setup_criterion(criterion: str, dataloader: torch.utils.data.DataLoader, class_weights: bool) -> nn.Module:
     """
     Configure the loss function for training.
 
@@ -140,7 +140,7 @@ def training_setup(model_name: str,
                 criterion: str, 
                 optimizer: str, 
                 pretrained_weights: bool, 
-                dataloader: torch.utils.data.Dataloader,
+                dataloader: torch.utils.data.DataLoader,
                 class_weights: bool
 ) -> tuple[nn.Module, nn.Module, torch.optim.Optimizer]:
     """
@@ -152,7 +152,7 @@ def training_setup(model_name: str,
         criterion (str): Name of the loss function.
         optimizer (str): Name of the optimizer.
         pretrained_weights (bool): If True, load custom weights; otherwise, use default pre-trained weights.
-        dataloader (Dataloader): Loader for training data.
+        dataloader (DataLoader): Loader for training data.
 
     Returns:
         tuple: Configured model, loss function, and optimizer.
