@@ -20,6 +20,7 @@ def train_models(
     optimizer: str = "adam",
     callbacks: list = None,
     pretrained_weights: str = None,
+    class_weights: bool = False,
     freeze_base: bool = True
 ):
     """
@@ -35,6 +36,7 @@ def train_models(
         optimizer (str): Optimizer to use (e.g., 'adam', 'sgd').
         callbacks (list): List of callbacks (e.g., 'ModelCheckpoint', 'EarlyStopping')
         pretrained_weights (str): Path to existing weights for further training. Defaults to None.
+        class_weights (bool): Whether to compute class weights for imbalanced datasets.
         freeze_base (bool): Whether to freeze the base model layers.
     """
     # Load dataset
@@ -43,9 +45,14 @@ def train_models(
     val_loader = data_loaders["val"]
     # test_loader = data_loaders["test"]
     logging.info("Datasets loaded successfully.")
-    num_classes = len(train_loader.dataset.classes)
-
-    model, criterion, optimizer = training_setup(model_name, learning_rate, criterion, optimizer, pretrained_weights, num_classes)
+    
+    model, criterion, optimizer = training_setup(model_name, 
+                                                 learning_rate, 
+                                                 criterion, 
+                                                 optimizer, 
+                                                 pretrained_weights, 
+                                                 train_loader, 
+                                                 class_weights=train_loader.dataset if class_weights else None)
 
     # Load weights if a path is provided
     if pretrained_weights:

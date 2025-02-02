@@ -24,7 +24,8 @@ def main():
         train_split=args['TRAIN_SPLIT'],  
         test_split=args['TEST_SPLIT'],
         img_size=args['IMG_SIZE'],  
-        use_augmentation=args['DATA_AUGMENTATION']
+        use_augmentation=args['DATA_AUGMENTATION'],
+        use_sampler=args['SAMPLER']
     )
 
     # Step 3: Train the models
@@ -38,7 +39,8 @@ def main():
         optimizer=args['OPTIMIZER'],
         criterion=args['CRITERION'],
         callbacks=args['CALLBACKS'],
-        pretrained_weights=args['PRETRAINED_WEIGHTS']
+        pretrained_weights=args['PRETRAINED_WEIGHTS'],
+        class_weights=args['CLASS_WEIGHTS']
     )
 
     # Step 4: Evaluate models

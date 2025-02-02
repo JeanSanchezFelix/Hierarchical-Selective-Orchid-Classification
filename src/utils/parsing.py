@@ -203,8 +203,9 @@ def parse() -> dict[str, int | str | list]:
                          help='Dataset that will be used for training.')
     data_group.add_argument("--train_split", type=float, default=0.8, help="Proportion of data for training (0.0-1.0).")
     data_group.add_argument("--test_split", type=float, default=0.1, help="Proportion of data for testing (0.0-1.0).")
-    data_group.add_argument("--data_augmentation", action="store_true", default=0, 
-                            help="Enable data augmentation: 0 (False), 1 (True).")
+    data_group.add_argument("--data_augmentation", action="store_true", default=0, help="Enable data augmentation: 0 (False), 1 (True).")
+    data_group.add_argument("--sampler", action="store_true", default=0, help="Enable weighted sampler: 0 (False), 1 (True).")
+    data_group.add_argument("--class_weights", action="store_true", default=0, help="Enable class weights: 0 (False), 1 (True).")
 
     # Miscellaneous parameters group
     misc_group = parser.add_argument_group("Miscellaneous")
@@ -248,6 +249,8 @@ def parse() -> dict[str, int | str | list]:
         "TEST_SPLIT": combined_args['test_split'],
         "IMG_SIZE": combined_args['img_size'],
         "DATA_AUGMENTATION": combined_args['data_augmentation'],
+        "SAMPLER": combined_args['sampler'],
+        "CLASS_WEIGHTS": combined_args['class_weights'],
         "CALLBACKS": list(CALLBACKS.values()),
         "PRETRAINED_WEIGHTS": combined_args['pretrained_weights'],
         "SAVE_DIR": combined_args['save_dir']
