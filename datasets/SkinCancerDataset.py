@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from torchvision import datasets, transforms
 from torch.utils.data import Dataset
-from collections import Counter
+from datasets import CustomDataset
 
 cancer_classes = ["Squamous cell carcinoma", "Melanoma", "Basal cell carcinoma"]
 other_classes = [
@@ -12,7 +12,7 @@ other_classes = [
 ]
 
 
-class SkinCancerDataset(Dataset):
+class SkinCancerDataset(CustomDataset):
     """
     Custom dataset for skin cancer classification with optional binary mapping and selective augmentation.
 
@@ -27,59 +27,37 @@ class SkinCancerDataset(Dataset):
 
     def __init__(self, transform, mode="train", binary_mapping=True, use_minority_augmentation=False, minority_threshold=1000):
         self.name="Skin Lesions"
-        self.dataset = datasets.ImageFolder(self.rootDir + mode, transform = transform)
-        self.use_minority_augmentation = use_minority_augmentation
-        
-        # Compute class distribution dynamically
-        self.targets = np.array(self.dataset.targets)
-        class_counts = Counter(self.targets)
-        self.minority_classes = {cls for cls, count in class_counts.items() if count < minority_threshold}
 
-        # Define augmentation only for minority classes
-        self.minority_transform = transforms.Compose([
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomRotation(30),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-            transforms.RandomAffine(degrees=0, shear=10),
-            transforms.ToTensor()
-        ])
+        super().__init__(self.rootDir, transform, mode, binary_mapping, use_minority_augmentation)
 
+        # If binary mapping is enabled
         if binary_mapping:
-            label_mapping = {class_name: 1 for class_name in cancer_classes}
-            label_mapping.update({class_name: 0 for class_name in other_classes})
-            original_classes = self.dataset.classes                                                             # Class names in the dataset
-            class_to_binary_label = {original_classes.index(cls): label_mapping[cls] for cls in label_mapping}
-
-            # Apply the label mapping dynamically to the dataset
-            self.dataset.targets = [class_to_binary_label[target] for target in self.dataset.targets]
-            self.dataset.classes = ['Other', 'Cancer']
-            self.class_to_idx = {'Other': 0, 'Cancer': 1}
-
-            # Adjust dataset samples
-            samples = []
-            for sample in self.dataset.samples:
-                if any(sample[0].__contains__(cancer_type) for cancer_type in cancer_classes):
-                    samples.append((sample[0], 1))
-                else:
-                    samples.append((sample[0], 0))
-            self.dataset.samples = samples
+            self.apply_binary_mapping()
         else:
             self.class_to_idx = self.dataset.class_to_idx
 
-    def __len__(self):
-        return len(self.dataset)
+    def apply_binary_mapping(self):
+        """
+        Apply binary class mapping based on a dictionary defined in the subclass.
+        """
+        label_mapping = {class_name: 1 for class_name in cancer_classes}
+        label_mapping.update({class_name: 0 for class_name in other_classes})
+        original_classes = self.dataset.classes                                                             # Class names in the dataset
+        class_to_binary_label = {original_classes.index(cls): label_mapping[cls] for cls in label_mapping}
 
-    def __getitem__(self,idx):
-        img, label = self.dataset[idx]
+        # Apply the label mapping dynamically to the dataset
+        self.dataset.targets = [class_to_binary_label[target] for target in self.dataset.targets]
+        self.dataset.classes = ['Other', 'Cancer']
+        self.class_to_idx = {'Other': 0, 'Cancer': 1}
 
-        # Apply augmentation only if minority augmentation is enabled and class is in minority
-        if self.use_minority_augmentation and label in self.minority_classes:
-            img = self.minority_transform(img)
-
-        return img, label
-
-    def getName(self):
-        return self.name
+        # Adjust dataset samples
+        samples = []
+        for sample in self.dataset.samples:
+            if any(sample[0].__contains__(cancer_type) for cancer_type in cancer_classes):
+                samples.append((sample[0], 1))
+            else:
+                samples.append((sample[0], 0))
+        self.dataset.samples = samples
     
     @classmethod
     def getDir(cls):
