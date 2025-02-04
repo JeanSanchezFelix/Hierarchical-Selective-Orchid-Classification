@@ -11,7 +11,6 @@ other_classes = [
     "Benign keratosis-like lesions", "Actinic keratoses"
 ]
 
-
 class SkinCancerDataset(CustomDataset):
     """
     Custom dataset for skin cancer classification with optional binary mapping and selective augmentation.
