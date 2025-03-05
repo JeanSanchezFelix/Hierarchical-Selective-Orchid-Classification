@@ -8,14 +8,15 @@ from torchvision import transforms
 from tqdm import tqdm
 from datasets.registry import DATASET_REGISTRY
 from src.utils.model_setup import setup_model
-from src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_radar_chart
+from src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_roc_auc_curve, plot_radar_chart
 
-def evaluate(model_path: str, img_size: int, dataset: str, save_dir: str = None):
+def evaluate(model_path: str, metadata_path: str, img_size: int, dataset: str, save_dir: str = None):
     """
     Perform inference on the test dataset and evaluate model performance.
 
     Parameters:
         model_path (str): Path to the saved model file.
+        metadata_path (str): Path to the metadata of saved model file.
         dataset (str): The name of the dataset that will be used for evaluation.
         save_dir (str): Directory to save plots. If None, plots will not be saved.
     """
@@ -24,7 +25,9 @@ def evaluate(model_path: str, img_size: int, dataset: str, save_dir: str = None)
     
     # Load the saved model and its parameters
     model_data = torch.load(model_path, weights_only=False, map_location=device)
-    batch_size = model_data["batch_size"]
+    metadata = torch.load(metadata_path)
+    criterion = metadata["criterion"]
+    batch_size = metadata["batch_size"]
 
     # Image normalization parameters (standard for ImageNet-pretrained models)
     mean = (0.485, 0.456, 0.406)
@@ -46,19 +49,19 @@ def evaluate(model_path: str, img_size: int, dataset: str, save_dir: str = None)
 
     # Initialize and load the model
     model = setup_model("mobilenet_v2", pretrained_weights=False, num_classes=len(class_labels))
-    model.load_state_dict(model_data["model"])
+    model.load_state_dict(model_data)
     model.to(device)  # Move the model to the same device as the inputs
 
-    test_inference(model, test_loader, device, save_dir)
+    test_inference(model, criterion, test_loader, device, save_dir)
 
-def compute_loss_and_predictions(outputs, labels, criterion=None):
+def compute_loss_and_predictions(outputs, labels, criterion):
     """
     Computes loss (if criterion is provided) and generates predictions.
 
     Parameters:
         outputs (torch.Tensor): Raw model outputs (logits).
         labels (torch.Tensor): Ground truth labels.
-        criterion (nn.Module, optional): Loss function. If None, loss is not computed.
+        criterion (nn.Module, optional): Loss function.
 
     Returns:
         loss (torch.Tensor or None): Computed loss (if criterion is provided).
@@ -66,7 +69,7 @@ def compute_loss_and_predictions(outputs, labels, criterion=None):
         preds (torch.Tensor): Final predicted class labels.
     """
     loss = None                                                     # Default to None in case of inference
-
+    
     if isinstance(criterion, nn.BCELoss):                           # Binary Cross-Entropy Loss
         probs = torch.sigmoid(outputs)                              # Convert logits to probabilities
         if criterion is not None:                                   # Compute loss only in training mode
@@ -91,13 +94,12 @@ def compute_loss_and_predictions(outputs, labels, criterion=None):
             loss = criterion(outputs, labels)
         probs = torch.exp(outputs)                                  # Convert log probabilities back to probabilities
         _, preds = torch.max(outputs, 1)
-
     else:
         raise ValueError(f"Unsupported loss function: {type(criterion)}")
 
     return loss, probs, preds
 
-def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.device, save_dir: str):
+def test_inference(model: nn.Module, criterion, test_loader: DataLoader, device: torch.device, save_dir: str):
     """
     Perform inference on the test dataset.
 
@@ -112,13 +114,13 @@ def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.devi
     model.eval()                                                    # Set the model to evaluation mode
     predictions, ground_truths, probabilities = [], [], []
     class_labels = test_loader.dataset.classes
-
+    # TODO: Criterion fix
     with torch.no_grad():  # Disable gradient computation
         for inputs, labels in tqdm(test_loader, desc="Inference Progress"):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             
-            _, probs, preds = compute_loss_and_predictions(outputs, labels, criterion=None)  
+            _, probs, preds = compute_loss_and_predictions(outputs, labels, criterion)  
 
             ground_truths.extend(labels.cpu().numpy())
             predictions.extend(preds.cpu().numpy())
@@ -143,5 +145,6 @@ def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.devi
             labels=class_labels,
             save_path=os.path.join(save_dir, "confusion_matrix.png")
         )
+        plot_roc_auc_curve(y_true, y_proba, save_path=os.path.join(save_dir, "roc_auc_curve.png"))
         plot_radar_chart(metrics, save_path=os.path.join(save_dir, "radar_chart.png"))
         logging.info(f"Plots saved to {save_dir}")

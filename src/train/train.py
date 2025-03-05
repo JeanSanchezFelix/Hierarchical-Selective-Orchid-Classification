@@ -82,7 +82,9 @@ def train_models(
 
     # Initialize variables for checkpointing
     best_model_path = os.path.join(save_dir, f"{model_name}_best_model.pth")
+    metrics_save_dir = os.path.join(save_dir, "metrics")
     os.makedirs(save_dir, exist_ok=True)
+    os.makedirs(metrics_save_dir, exist_ok=True)
     logging.info(f"Training will save checkpoints to: {save_dir}")
 
     for callback in callbacks:
@@ -103,13 +105,12 @@ def train_models(
 
     # Load the best model weights before returning
     model_data = torch.load(best_model_path, weights_only=False)
-    model.load_state_dict(model_data["model"])
+    model.load_state_dict(model_data)
     logging.info(f"Best model weights loaded from: {best_model_path}")
-
-    plot_train_val_curve(loss_dict, save_path=os.path.join(save_dir, "curve.png"))
+    plot_train_val_curve(loss_dict, save_path=os.path.join(metrics_save_dir, "loss_curve.png"))
 
     if data_loaders["test"]:
-        test_inference(model, data_loaders["test"], device, save_dir)
+        test_inference(model, criterion, data_loaders["test"], device, metrics_save_dir)
 
     return model
 
