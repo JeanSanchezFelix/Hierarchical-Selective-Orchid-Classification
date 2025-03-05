@@ -4,6 +4,7 @@ from collections import Counter
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 from datasets.registry import DATASET_REGISTRY
+from src.utils.data_imbalance import get_weighted_sampler
 
 def log_dataset_statistics(dataset, dataset_name: str):
     """
@@ -49,7 +50,8 @@ def load_data(
     img_size: int = 224,
     mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
     std: tuple[float, float, float] = (0.229, 0.224, 0.225),
-    use_augmentation: bool = False
+    use_augmentation: bool = False,
+    use_sampler: bool = False
 ) -> dict[str, DataLoader]:
     """
     Load and preprocess data from a directory, handling both pre-split and unsplit datasets.
@@ -63,6 +65,7 @@ def load_data(
         mean (tuple[float, float, float]): Mean values for normalization.
         std (tuple[float, float, float]): Standard deviation values for normalization.
         use_augmentation (bool): Whether to apply data augmentation to the training dataset.
+        use_sampler (bool): Whether to create a weighted sampler for the training dataset.
 
     Returns:
         dict[str, DataLoader]: A dictionary containing DataLoaders for 'train', 'val', and optionally 'test'.
@@ -100,7 +103,8 @@ def load_data(
         # Pre-split dataset: train and val directories exist
         train_dataset = DATASET_REGISTRY[dataset](mode='train', transform=train_transforms)
         val_dataset = DATASET_REGISTRY[dataset](mode='val', transform=val_transforms)
-        loaders['train'] = DataLoader(train_dataset.dataset, batch_size=batch_size, shuffle=True)
+        sampler = get_weighted_sampler(train_dataset) if use_sampler else None # initialize weighted sampler
+        loaders['train'] = DataLoader(train_dataset.dataset, batch_size=batch_size, sampler=sampler, shuffle=False if use_sampler else True)
         loaders['val'] = DataLoader(val_dataset.dataset, batch_size=batch_size, shuffle=False)
 
         # Check for a 'test' folder
@@ -125,7 +129,7 @@ def load_data(
         
         # Apply augmentation to train dataset and create dataset
         train_dataset.dataset.transform = train_transforms  
-        loaders['train'] = DataLoader(train_dataset.dataset, batch_size=batch_size, shuffle=True)
+        loaders['train'] = DataLoader(train_dataset.dataset, batch_size=batch_size, sampler=sampler, shuffle=False if use_sampler else True)
         loaders['val'] = DataLoader(val_dataset.dataset, batch_size=batch_size, shuffle=False)
         loaders['test'] = DataLoader(test_dataset.dataset, batch_size=batch_size, shuffle=False)
 

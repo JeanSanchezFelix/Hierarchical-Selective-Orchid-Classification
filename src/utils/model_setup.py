@@ -1,8 +1,9 @@
 import logging
 import torch.nn as nn
 import torch.optim
-# from torch.optim import Adam, SGD, RMSprop, Adagrad, AdamW
+from torch.utils.data import DataLoader
 from torchvision import models
+from src.utils.data_imbalance import calculate_model_weights
 
 def setup_model(model_name: str, pretrained_weights: bool, num_classes: int) -> nn.Module:
     """
@@ -23,7 +24,7 @@ def setup_model(model_name: str, pretrained_weights: bool, num_classes: int) -> 
     if model_name.lower() == "mobilenet_v2":
         model = models.mobilenet_v2(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(num_features, num_classes)
+        model.classifier[1] = nn.Linear(num_features, 1) if num_classes == 2 else nn.Linear(num_features, num_classes)
     elif model_name.lower() == "resnet18":
         model = models.resnet18(weights=None if pretrained_weights else 'DEFAULT')
         num_features = model.fc.in_features
@@ -70,7 +71,7 @@ def setup_model(model_name: str, pretrained_weights: bool, num_classes: int) -> 
 
     return model
 
-def setup_criterion(criterion: str) -> nn.Module:
+def setup_criterion(criterion: str, dataloader: torch.utils.data.DataLoader, class_weights: bool) -> nn.Module:
     """
     Configure the loss function for training.
 
@@ -85,17 +86,17 @@ def setup_criterion(criterion: str) -> nn.Module:
     """
     # Map the criterion name to the corresponding loss function
     if criterion.lower() == "cross_entropy":
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss(weight=calculate_model_weights(dataloader) if class_weights else None)
     elif criterion.lower() == "mse":
-        criterion = nn.MSELoss()
+        criterion = nn.MSELoss(weight=calculate_model_weights(dataloader) if class_weights else None)
     elif criterion.lower() == "l1":
-        criterion = nn.L1Loss()
+        criterion = nn.L1Loss(weight=calculate_model_weights(dataloader) if class_weights else None)
     elif criterion.lower() == "nll":
-        criterion = nn.NLLLoss()
+        criterion = nn.NLLLoss(weight=calculate_model_weights(dataloader) if class_weights else None)
     elif criterion.lower() == "bce":
-        criterion = nn.BCELoss()
+        criterion = nn.BCELoss(weight=calculate_model_weights(dataloader) if class_weights else None)
     elif criterion.lower() == "bce_with_logits":
-        criterion = nn.BCEWithLogitsLoss()
+        criterion = nn.BCEWithLogitsLoss(weight=calculate_model_weights(dataloader) if class_weights else None)
     else:
         logging.error(f"Unsupported loss function: {criterion}")
         raise ValueError(f"Unsupported loss function: {criterion}")
@@ -139,7 +140,8 @@ def training_setup(model_name: str,
                 criterion: str, 
                 optimizer: str, 
                 pretrained_weights: bool, 
-                num_classes: int
+                dataloader: torch.utils.data.DataLoader,
+                class_weights: bool
 ) -> tuple[nn.Module, nn.Module, torch.optim.Optimizer]:
     """
     Complete setup for the model, optimizer, and loss function.
@@ -150,14 +152,14 @@ def training_setup(model_name: str,
         criterion (str): Name of the loss function.
         optimizer (str): Name of the optimizer.
         pretrained_weights (bool): If True, load custom weights; otherwise, use default pre-trained weights.
-        num_classes (int): Number of output classes.
+        dataloader (DataLoader): Loader for training data.
 
     Returns:
         tuple: Configured model, loss function, and optimizer.
     """
     # Configure model, criterion, and optimizer
+    num_classes = len(dataloader.dataset.classes)
     model = setup_model(model_name, pretrained_weights, num_classes)
-    criterion = setup_criterion(criterion)
+    criterion = setup_criterion(criterion, dataloader, class_weights)
     optimizer = setup_optimizer(model, optimizer, learning_rate)
-
     return model, criterion, optimizer

@@ -1,3 +1,4 @@
+from .CustomDataset import *
 from .CpAnemiaDataset import *
 from .MonkeypoxDataset import *
 from .SkinCancerDataset import *

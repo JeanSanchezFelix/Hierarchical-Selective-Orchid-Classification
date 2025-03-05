@@ -8,7 +8,7 @@ from tqdm import tqdm
 from sklearn.model_selection import KFold
 from src.utils.metrics import plot_train_val_curve, calculate_metrics
 from src.utils.model_setup import training_setup
-from src.utils.eval import test_inference
+from src.utils.eval import test_inference, compute_loss_and_predictions
 
 def train_models(
     model_name: str,
@@ -20,6 +20,7 @@ def train_models(
     optimizer: str = "adam",
     callbacks: list = None,
     pretrained_weights: str = None,
+    class_weights: bool = False,
     freeze_base: bool = True
 ):
     """
@@ -35,6 +36,7 @@ def train_models(
         optimizer (str): Optimizer to use (e.g., 'adam', 'sgd').
         callbacks (list): List of callbacks (e.g., 'ModelCheckpoint', 'EarlyStopping')
         pretrained_weights (str): Path to existing weights for further training. Defaults to None.
+        class_weights (bool): Whether to compute class weights for imbalanced datasets.
         freeze_base (bool): Whether to freeze the base model layers.
     """
     # Load dataset
@@ -43,9 +45,14 @@ def train_models(
     val_loader = data_loaders["val"]
     # test_loader = data_loaders["test"]
     logging.info("Datasets loaded successfully.")
-    num_classes = len(train_loader.dataset.classes)
-
-    model, criterion, optimizer = training_setup(model_name, learning_rate, criterion, optimizer, pretrained_weights, num_classes)
+    
+    model, criterion, optimizer = training_setup(model_name, 
+                                                 learning_rate, 
+                                                 criterion, 
+                                                 optimizer, 
+                                                 pretrained_weights, 
+                                                 train_loader, 
+                                                 class_weights=train_loader.dataset if class_weights else None)
 
     # Load weights if a path is provided
     if pretrained_weights:
@@ -124,6 +131,7 @@ def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion
     """
     loss_dict = {'train': [], 'val': []}
     best_acc = 0.0
+    num_classes = len(train_loader.dataset.classes)
 
     for epoch in range(epochs):
         logging.info(f"Epoch {epoch + 1}/{epochs}")
@@ -157,10 +165,9 @@ def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion
 
                     with torch.set_grad_enabled(phase == 'train'):
                         outputs = model(inputs)
-                        _, preds = torch.max(outputs, 1)
-                        loss = criterion(outputs, labels)
-                        probs = torch.nn.functional.softmax(outputs, dim=1)
 
+                        loss, probs, preds = compute_loss_and_predictions(outputs, labels, criterion)
+                        
                         if phase == 'train':
                             loss.backward()
                             optimizer.step()

@@ -1,5 +1,8 @@
+import torch
+import numpy as np
+from torchvision import datasets, transforms
 from torch.utils.data import Dataset
-from torchvision import datasets
+from datasets import CustomDataset
 
 cancer_classes = ["Squamous cell carcinoma", "Melanoma", "Basal cell carcinoma"]
 other_classes = [
@@ -8,33 +11,52 @@ other_classes = [
     "Benign keratosis-like lesions", "Actinic keratoses"
 ]
 
+class SkinCancerDataset(CustomDataset):
+    """
+    Custom dataset for skin cancer classification with optional binary mapping and selective augmentation.
 
-class SkinCancerDataset(Dataset):
-
+    Args:
+        transform (transforms.Compose): Transformations to apply to images.
+        mode (str): Dataset split ('train', 'val', 'test').
+        binary_mapping (bool): Whether to map labels to binary classification.
+        use_minority_augmentation (bool): Whether to apply augmentations only to minority classes.
+        minority_threshold (int): Classes with fewer than this number of samples are considered minority.
+    """
     rootDir = "data/skin-lesions/download/"
 
-    def __init__(self, transform, mode="train", binary_mapping=False):
+    def __init__(self, transform, mode="train", binary_mapping=True, use_minority_augmentation=False, minority_threshold=1000):
         self.name="Skin Lesions"
-        self.dataset = datasets.ImageFolder(self.rootDir + mode, transform = transform)
-        self.class_to_idx = self.dataset.class_to_idx
 
+        super().__init__(self.rootDir, transform, mode, binary_mapping, use_minority_augmentation)
+
+        # If binary mapping is enabled
         if binary_mapping:
-            label_mapping = {class_name: 1 for class_name in cancer_classes}
-            label_mapping.update({class_name: 0 for class_name in other_classes})
-            original_classes = self.dataset.classes  # Class names in the dataset
-            class_to_binary_label = {original_classes.index(cls): label_mapping[cls] for cls in label_mapping}
+            self.apply_binary_mapping()
+        else:
+            self.class_to_idx = self.dataset.class_to_idx
 
-            # Apply the label mapping dynamically to the dataset
-            self.dataset.targets = [class_to_binary_label[target] for target in self.dataset.targets]
+    def apply_binary_mapping(self):
+        """
+        Apply binary class mapping based on a dictionary defined in the subclass.
+        """
+        label_mapping = {class_name: 1 for class_name in cancer_classes}
+        label_mapping.update({class_name: 0 for class_name in other_classes})
+        original_classes = self.dataset.classes                                                             # Class names in the dataset
+        class_to_binary_label = {original_classes.index(cls): label_mapping[cls] for cls in label_mapping}
 
-    def __len__(self):
-        return len(self.dataset)
+        # Apply the label mapping dynamically to the dataset
+        self.dataset.targets = [class_to_binary_label[target] for target in self.dataset.targets]
+        self.dataset.classes = ['Other', 'Cancer']
+        self.class_to_idx = {'Other': 0, 'Cancer': 1}
 
-    def __getitem__(self,idx):
-        return self.dataset[idx]
-
-    def getName(self):
-        return self.name
+        # Adjust dataset samples
+        samples = []
+        for sample in self.dataset.samples:
+            if any(sample[0].__contains__(cancer_type) for cancer_type in cancer_classes):
+                samples.append((sample[0], 1))
+            else:
+                samples.append((sample[0], 0))
+        self.dataset.samples = samples
     
     @classmethod
     def getDir(cls):
