@@ -24,7 +24,7 @@ def evaluate(model_path: str, metadata_path: str, img_size: int, dataset: str, s
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Load the saved model and its parameters
-    model_data = torch.load(model_path, weights_only=False, map_location=device)
+    model_data = torch.load(model_path, weights_only=True, map_location=device)
     metadata = torch.load(metadata_path)
     criterion = metadata["criterion"]
     batch_size = metadata["batch_size"]

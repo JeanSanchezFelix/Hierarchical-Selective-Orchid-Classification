@@ -104,7 +104,7 @@ def train_models(
         callback.on_train_end(logs={"model": model, "optimizer": optimizer})
 
     # Load the best model weights before returning
-    model_data = torch.load(best_model_path, weights_only=False)
+    model_data = torch.load(best_model_path, weights_only=True)
     model.load_state_dict(model_data)
     logging.info(f"Best model weights loaded from: {best_model_path}")
     plot_train_val_curve(loss_dict, save_path=os.path.join(metrics_save_dir, "loss_curve.png"))
