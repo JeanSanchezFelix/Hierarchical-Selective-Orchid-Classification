@@ -54,15 +54,6 @@ def train_models(
                                                  train_loader, 
                                                  class_weights=train_loader.dataset if class_weights else None)
 
-    # Load weights if a path is provided
-    if pretrained_weights:
-        if os.path.exists(pretrained_weights):
-            model.load_state_dict(torch.load(pretrained_weights))
-            logging.info(f"Pre-trained weights loaded from: {pretrained_weights}")
-        else:
-            logging.error(f"Pre-trained weights path does not exist: {pretrained_weights}")
-            raise FileNotFoundError(f"File not found: {pretrained_weights}")
-
     # Freeze base layers if specified
     if freeze_base:
         logging.info("Freezing base layers of the model.")
@@ -151,43 +142,48 @@ def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion
 
         # set model to train or eval mode
         for phase in ['train', 'val']:
-            model.train() if phase == 'train' else model.eval()
-            data_loader = train_loader if phase == 'train' else val_loader
+            is_train = phase == 'train'
+            model.train() if is_train else model.eval()
+            data_loader = train_loader if is_train else val_loader
 
             running_loss = 0.0
-            total = 0.0
+            total_samples = 0.0
             correct = 0.0
             predictions, ground_truths, probabilities = [], [], []
 
             with tqdm(total=len(data_loader), desc=f"{phase.capitalize()} Epoch {epoch + 1}/{epochs}") as pbar:
                 for inputs, labels in data_loader:
                     inputs, labels = inputs.to(device), labels.to(device)
-                    optimizer.zero_grad()
+                    
+                    # Zero gradients only during training
+                    if is_train:
+                        optimizer.zero_grad()
 
-                    with torch.set_grad_enabled(phase == 'train'):
+                    with torch.set_grad_enabled(is_train):
                         outputs = model(inputs)
 
                         loss, probs, preds = compute_loss_and_predictions(outputs, labels, criterion)
                         
-                        if phase == 'train':
+                        if is_train:
                             loss.backward()
                             optimizer.step()
 
-                    # Update loss and collect predictions
-                    running_loss += loss.item() * inputs.size(0)
-                    # correct += (preds == labels).sum().item()
-                    total += labels.size(0)
+                    # Update running loss and sample count
+                    batch_size = inputs.size(0)
+                    running_loss += loss.item() * batch_size
+                    total_samples += batch_size
 
+                    # Accumulate predictions and ground truths for metrics
                     ground_truths.extend(labels.cpu().detach().numpy())
                     predictions.extend(preds.cpu().detach().numpy())
                     probabilities.extend(probs.cpu().detach().numpy())
-
-                    # Update the progress bar
-                    pbar.set_postfix(loss=f"{running_loss / total:.4f}")
+                    
+                    # Update progress bar with average loss so far
+                    pbar.set_postfix(loss=f"{running_loss / total_samples:.4f}")
                     pbar.update(1)
 
             # Compute aggregated metrics after epoch
-            epoch_loss = running_loss / len(data_loader.dataset)
+            epoch_loss = running_loss / total_samples
 
             # Calculate metrics
             y_true = np.array(ground_truths)
