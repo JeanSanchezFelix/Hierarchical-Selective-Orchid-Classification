@@ -6,7 +6,7 @@ from sklearn.preprocessing import label_binarize
 # Use a colorblind-friendly palette
 sns.set_palette("colorblind")
 
-def calculate_metrics(y_true, y_pred, y_proba=None) -> dict[str,float]:
+def calculate_metrics(y_true, y_pred, y_proba = None) -> dict[str, float]:
     """
     Calculates classification metrics, supporting both binary and multiclass classification.
 
@@ -14,18 +14,15 @@ def calculate_metrics(y_true, y_pred, y_proba=None) -> dict[str,float]:
         y_true (list or ndarray): True labels.
         y_pred (list or ndarray): Predicted labels.
         y_proba (ndarray, optional): Predicted probabilities or scores for all classes 
-                                     (for AUC-Score in multiclass classification).
+                                     (required for AUC-Score computation).
 
     Returns:
-        dict: A dictionary containing the computed metrics.
+        dict[str, float]: A dictionary containing the computed metrics.
     """
-    # Determine if the problem is binary or multiclass
+    # Determine whether the task is binary or multiclass.
     num_classes = len(set(y_true))
-
-    # Choose averaging method
     average = 'binary' if num_classes == 2 else 'macro'
 
-    # Compute metrics
     metrics = {
         "Accuracy": accuracy_score(y_true, y_pred),
         "Recall": recall_score(y_true, y_pred, average=average),
@@ -33,12 +30,12 @@ def calculate_metrics(y_true, y_pred, y_proba=None) -> dict[str,float]:
         "F1-Score": f1_score(y_true, y_pred, average=average),
     }
 
-    # Compute AUC-Score
     if y_proba is not None:
         if num_classes == 2:
+            # For binary, assume probabilities for the positive class are in column index 1.
             metrics["AUC-Score"] = roc_auc_score(y_true, y_proba[:, 1])
         else:
-            # Multiclass AUC-Score (requires one-vs-rest probabilities)
+            # For multiclass, compute the AUC using one-vs-rest probabilities.
             metrics["AUC-Score"] = roc_auc_score(y_true, y_proba, multi_class='ovr', average='macro')
 
     return metrics

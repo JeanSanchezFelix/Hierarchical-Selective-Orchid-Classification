@@ -103,71 +103,75 @@ def setup_model(model_name: str, pretrained_weights: Optional[str], num_classes:
     
     return model
 
-def setup_criterion(criterion: str, dataloader: torch.utils.data.DataLoader, class_weights: bool) -> nn.Module:
+def setup_criterion(criterion_name: str, dataloader: DataLoader, use_class_weights: bool) -> nn.Module:
     """
-    Configure the loss function for training.
+    Configure and return the loss function for training.
 
     Parameters:
-        criterion (str): Name of the loss function (e.g., "cross_entropy", "mse").
+        criterion_name (str): Name of the loss function (e.g., "cross_entropy", "mse", "l1", "nll", "bce", "bce_with_logits").
+        dataloader (DataLoader): DataLoader used for training (used to compute class weights if enabled).
+        use_class_weights (bool): If True, computes and passes class weights to the loss function.
 
     Returns:
         nn.Module: The configured loss function.
 
     Raises:
-        ValueError: If the specified criterion is unsupported.
+        ValueError: If the specified criterion_name is unsupported.
     """
-    # Map the criterion name to the corresponding loss function
-    criterion_lower = criterion.lower()
-    if criterion_lower == "cross_entropy":
-        criterion = nn.CrossEntropyLoss(weight=calculate_model_weights(dataloader) if class_weights else None)
-    elif criterion_lower == "mse":
-        criterion = nn.MSELoss(weight=calculate_model_weights(dataloader) if class_weights else None)
-    elif criterion_lower == "l1":
-        criterion = nn.L1Loss(weight=calculate_model_weights(dataloader) if class_weights else None)
-    elif criterion_lower == "nll":
-        criterion = nn.NLLLoss(weight=calculate_model_weights(dataloader) if class_weights else None)
-    elif criterion_lower == "bce":
-        criterion = nn.BCELoss(weight=calculate_model_weights(dataloader) if class_weights else None)
-    elif criterion_lower == "bce_with_logits":
-        criterion = nn.BCEWithLogitsLoss(weight=calculate_model_weights(dataloader) if class_weights else None)
-    else:
-        logging.error(f"Unsupported loss function: {criterion}")
-        raise ValueError(f"Unsupported loss function: {criterion}")
-    
-    return criterion
+    # Pre-compute class weights if requested.
+    weights = calculate_model_weights(dataloader) if use_class_weights else None
+    criterion_name_lower = criterion_name.lower()
 
-def setup_optimizer(model, optimizer: str, learning_rate: float):
+    if criterion_name_lower == "cross_entropy":
+        loss_fn = nn.CrossEntropyLoss(weight=weights)
+    elif criterion_name_lower == "mse":
+        loss_fn = nn.MSELoss(weight=weights)
+    elif criterion_name_lower == "l1":
+        loss_fn = nn.L1Loss()  # Note: L1Loss does not support a weight parameter.
+    elif criterion_name_lower == "nll":
+        loss_fn = nn.NLLLoss(weight=weights)
+    elif criterion_name_lower == "bce":
+        loss_fn = nn.BCELoss(weight=weights)
+    elif criterion_name_lower == "bce_with_logits":
+        loss_fn = nn.BCEWithLogitsLoss(weight=weights)
+    else:
+        logging.error(f"Unsupported loss function: {criterion_name}")
+        raise ValueError(f"Unsupported loss function: {criterion_name}")
+
+    return loss_fn
+
+def setup_optimizer(model, optimizer_name: str, learning_rate: float):
     """
-    Configure the optimizer for training.
+    Configure and return the optimizer for training.
 
     Parameters:
         model (nn.Module): The model whose parameters need optimization.
-        optimizer (str): Name of the optimizer (e.g., "adam", "sgd").
+        optimizer_name (str): Name of the optimizer (e.g., "adam", "sgd", "rmsprop", "adagrad", "adamw").
         learning_rate (float): The learning rate for the optimizer.
 
     Returns:
         torch.optim.Optimizer: The configured optimizer.
 
     Raises:
-        ValueError: If the specified optimizer is unsupported.
+        ValueError: If the specified optimizer_name is unsupported.
     """
-    # Map the optimizer name to the corresponding optimizer
-    optimizer_lower = optimizer.lower()
-    if optimizer_lower == "adam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    elif optimizer_lower == "sgd":
-        optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
-    elif optimizer_lower == "rmsprop":
-        optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate, momentum=0.9)
-    elif optimizer_lower == "adagrad":
-        optimizer = torch.optim.Adagrad(model.parameters(), lr=learning_rate)
-    elif optimizer_lower == "adamw":
-        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    else:
-        logging.error(f"Unsupported optimizer: {optimizer}")
-        raise ValueError(f"Unsupported optimizer: {optimizer}")
+    optimizer_name_lower = optimizer_name.lower()
 
-    return optimizer
+    if optimizer_name_lower == "adam":
+        opt = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    elif optimizer_name_lower == "sgd":
+        opt = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
+    elif optimizer_name_lower == "rmsprop":
+        opt = torch.optim.RMSprop(model.parameters(), lr=learning_rate, momentum=0.9)
+    elif optimizer_name_lower == "adagrad":
+        opt = torch.optim.Adagrad(model.parameters(), lr=learning_rate)
+    elif optimizer_name_lower == "adamw":
+        opt = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    else:
+        logging.error(f"Unsupported optimizer: {optimizer_name}")
+        raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+
+    return opt
 
 def training_setup(model_name: str, 
                 learning_rate: float, 

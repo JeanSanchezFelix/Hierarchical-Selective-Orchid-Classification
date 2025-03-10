@@ -46,62 +46,98 @@ def evaluate(model_path: str, metadata_path: str, img_size: int, dataset: str, s
 
     # Retrieve class labels from the dataset
     class_labels = test_loader.dataset.classes
+    
+    filename = model_path.split('/')[-1]                # Split the path by '/' and get the last component (filename)
+    model_name = filename.split('_best_model.pth')[0]   # Split the filename by '_best_model.pth' to extract the model name
 
     # Initialize and load the model
-    model = setup_model("mobilenet_v2", pretrained_weights=False, num_classes=len(class_labels))
+    model = setup_model(model_name, pretrained_weights=False, num_classes=len(class_labels))
     model.load_state_dict(model_data)
     model.to(device)  # Move the model to the same device as the inputs
 
     test_inference(model, criterion, test_loader, device, save_dir)
 
-def compute_loss_and_predictions(outputs, labels, criterion):
+def compute_loss_and_predictions(outputs: torch.Tensor,
+                                labels: torch.Tensor,
+                                criterion: nn.Module
+                            ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Computes loss (if criterion is provided) and generates predictions.
+    Computes loss and generates predictions using the provided loss function.
+
+    For loss functions like BCE/BCELoss, CrossEntropyLoss, or NLLLoss, the appropriate transformation 
+    is applied to the raw outputs to compute both the loss and predicted class labels.
 
     Parameters:
         outputs (torch.Tensor): Raw model outputs (logits).
         labels (torch.Tensor): Ground truth labels.
-        criterion (nn.Module, optional): Loss function.
+        criterion (nn.Module): Loss function to use.
 
     Returns:
-        loss (torch.Tensor or None): Computed loss (if criterion is provided).
-        probs (torch.Tensor): Predicted probabilities.
-        preds (torch.Tensor): Final predicted class labels.
-    """
-    loss = None                                                     # Default to None in case of inference
+        Tuple containing:
+            - loss (torch.Tensor): Computed loss.
+            - probs (torch.Tensor): Predicted probabilities.
+            - preds (torch.Tensor): Final predicted class labels.
     
-    if isinstance(criterion, nn.BCELoss):                           # Binary Cross-Entropy Loss
-        probs = torch.sigmoid(outputs)                              # Convert logits to probabilities
-        if criterion is not None:                                   # Compute loss only in training mode
-            loss = criterion(probs, labels.float().unsqueeze(1))
-        preds = (probs >= 0.5).float()                              # Apply 0.5 threshold for binary classification
+    Raises:
+        ValueError: If an unsupported loss function is provided.
+    """
+    if isinstance(criterion, nn.BCELoss):
+        # BCELoss expects probabilities.
+        probs = torch.sigmoid(outputs)
+        loss = criterion(probs, labels.float().unsqueeze(1))
+        preds = (probs >= 0.5).float()
 
-    elif isinstance(criterion, nn.BCEWithLogitsLoss):               # More Stable BCE
-        if criterion is not None:
-            loss = criterion(outputs, labels.float().unsqueeze(1))  # BCEWithLogitsLoss expects raw logits
-        probs = torch.sigmoid(outputs)                              # Convert logits to probabilities for evaluation
-        preds = (probs >= 0.5).float()                              # Threshold at 0.5
+    elif isinstance(criterion, nn.BCEWithLogitsLoss):
+        # BCEWithLogitsLoss expects raw logits.
+        loss = criterion(outputs, labels.float().unsqueeze(1))
+        probs = torch.sigmoid(outputs)
+        preds = (probs >= 0.5).float()
 
-    elif isinstance(criterion, nn.CrossEntropyLoss):                # Multi-Class Cross-Entropy Loss
-        if criterion is not None:
-            loss = criterion(outputs, labels)                       # CrossEntropyLoss expects raw logits
-        probs = torch.softmax(outputs, dim=1)                       # Convert logits to probabilities
-        _, preds = torch.max(outputs, 1)                            # Get predicted class index
+    elif isinstance(criterion, nn.CrossEntropyLoss):
+        # CrossEntropyLoss expects raw logits and integer labels.
+        loss = criterion(outputs, labels)
+        probs = torch.softmax(outputs, dim=1)
+        _, preds = torch.max(probs, dim=1)
 
-    elif isinstance(criterion, nn.NLLLoss):                         # Negative Log Likelihood Loss
-        outputs = torch.log_softmax(outputs, dim=1)                 # Convert logits to log probabilities
-        if criterion is not None:
-            loss = criterion(outputs, labels)
-        probs = torch.exp(outputs)                                  # Convert log probabilities back to probabilities
-        _, preds = torch.max(outputs, 1)
+    elif isinstance(criterion, nn.NLLLoss):
+        # NLLLoss expects log-probabilities.
+        outputs = torch.log_softmax(outputs, dim=1)
+        loss = criterion(outputs, labels)
+        probs = torch.exp(outputs)
+        _, preds = torch.max(outputs, dim=1)
     else:
         raise ValueError(f"Unsupported loss function: {type(criterion)}")
 
     return loss, probs, preds
 
-def test_inference(model: nn.Module, criterion, test_loader: DataLoader, device: torch.device, save_dir: str):
+def compute_predictions(outputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Perform inference on the test dataset.
+    Computes predicted probabilities and class labels solely based on model outputs.
+
+    Determines whether the task is binary or multiclass based on the shape of the outputs.
+
+    Parameters:
+        outputs (torch.Tensor): Raw model outputs (logits).
+
+    Returns:
+        Tuple containing:
+            - probs (torch.Tensor): Predicted probabilities.
+            - preds (torch.Tensor): Final predicted class labels.
+    """
+    # Determine if outputs correspond to binary classification.
+    is_binary = (outputs.ndim == 1) or (outputs.shape[1] == 1)
+
+    if is_binary:
+        probs = torch.sigmoid(outputs)
+        preds = (probs >= 0.5).float()
+    else:
+        probs = torch.softmax(outputs, dim=1)
+        _, preds = torch.max(probs, dim=1)
+    return probs, preds
+
+def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.device, save_dir: str = None) -> None:
+    """
+    Performs inference on the test dataset, computes metrics, and optionally saves plots.
 
     Parameters:
         model (nn.Module): The trained model.
@@ -111,40 +147,47 @@ def test_inference(model: nn.Module, criterion, test_loader: DataLoader, device:
     """
     logging.info("Starting inference on the test dataset...")
     
-    model.eval()                                                    # Set the model to evaluation mode
+    model.eval()  # Set model to evaluation mode.
     predictions, ground_truths, probabilities = [], [], []
     class_labels = test_loader.dataset.classes
-    # TODO: Criterion fix
+
     with torch.no_grad():  # Disable gradient computation
         for inputs, labels in tqdm(test_loader, desc="Inference Progress"):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
-            
-            _, probs, preds = compute_loss_and_predictions(outputs, labels, criterion)  
+
+            probs, preds = compute_predictions(outputs)
 
             ground_truths.extend(labels.cpu().numpy())
             predictions.extend(preds.cpu().numpy())
             probabilities.extend(probs.cpu().numpy())
-    
+
     logging.info("Inference complete.")
     
-    # Calculate metrics
+    # Calculate metrics.
     y_true = np.array(ground_truths)
     y_pred = np.array(predictions)
     y_proba = np.array(probabilities) if probabilities else None
 
     metrics = calculate_metrics(y_true, y_pred, y_proba)
 
-    # Generate and save plots if `save_dir` is specified
+    # Print the metrics.
+    print("Metrics Results:")
+    for metric, value in metrics.items():
+        print(f"{metric}: {value:.4f}")
+
+    # Generate and save plots if save_dir is provided.
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
         plot_metric_bar(metrics, save_path=os.path.join(save_dir, "metrics_bar_chart.png"))
-        plot_confusion_matrix(
-            y_true=y_true,
-            y_pred=y_pred,
-            labels=class_labels,
-            save_path=os.path.join(save_dir, "confusion_matrix.png")
-        )
-        plot_roc_auc_curve(y_true, y_proba, save_path=os.path.join(save_dir, "roc_auc_curve.png"))
+        if class_labels is not None:
+            plot_confusion_matrix(
+                y_true=y_true,
+                y_pred=y_pred,
+                labels=class_labels,
+                save_path=os.path.join(save_dir, "confusion_matrix.png")
+            )
+        if y_proba is not None:
+            plot_roc_auc_curve(y_true, y_proba, save_path=os.path.join(save_dir, "roc_auc_curve.png"))
         plot_radar_chart(metrics, save_path=os.path.join(save_dir, "radar_chart.png"))
         logging.info(f"Plots saved to {save_dir}")
