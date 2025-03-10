@@ -1,7 +1,7 @@
 import logging
 from src.utils import parse, load_data, evaluate
 from src.train import train_models 
-
+import torch.nn as nn
 # Add the root directory to sys.path to access datasets
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
@@ -45,9 +45,10 @@ def main():
 
     # Step 4: Evaluate models
     logging.info("Starting model evaluation...")
-    evaluate(f"{args['SAVE_DIR']}/{args['DATASET']}/{args['MODEL_NAME']}_best_model.pth", 
-        args['IMG_SIZE'], args['DATASET'], 
-        f"{args['SAVE_DIR']}/{args['DATASET']}"
+    evaluate(f"{args['SAVE_DIR']}/{args['MODEL_NAME']}_best_model.pth",
+             f"{args['SAVE_DIR']}/metadata.pth", 
+                args['IMG_SIZE'], args['DATASET'], 
+            f"{args['SAVE_DIR']}"
     )
 
 

@@ -54,7 +54,11 @@ def load_data(
     use_sampler: bool = False
 ) -> dict[str, DataLoader]:
     """
-    Load and preprocess data from a directory, handling both pre-split and unsplit datasets.
+    Load and preprocess data, returning DataLoader objects for training, validation, and test splits.
+    
+    This function retrieves a dataset from a registry, applies the appropriate transformations 
+    (with optional data augmentation), and constructs DataLoaders. If a weighted sampler is desired,
+    it is applied to the training set.
 
     Parameters:
         dataset (str): Dataset used for training.
@@ -68,7 +72,7 @@ def load_data(
         use_sampler (bool): Whether to create a weighted sampler for the training dataset.
 
     Returns:
-        dict[str, DataLoader]: A dictionary containing DataLoaders for 'train', 'val', and optionally 'test'.
+        Dict[str, DataLoader]: A dictionary containing DataLoader instances for 'train', 'val', and, if available, 'test'.
     """
     
     # Define transforms
@@ -128,7 +132,8 @@ def load_data(
         )
         
         # Apply augmentation to train dataset and create dataset
-        train_dataset.dataset.transform = train_transforms  
+        train_dataset.dataset.transform = train_transforms
+        sampler = get_weighted_sampler(train_dataset) if use_sampler else None
         loaders['train'] = DataLoader(train_dataset.dataset, batch_size=batch_size, sampler=sampler, shuffle=False if use_sampler else True)
         loaders['val'] = DataLoader(val_dataset.dataset, batch_size=batch_size, shuffle=False)
         loaders['test'] = DataLoader(test_dataset.dataset, batch_size=batch_size, shuffle=False)

@@ -24,7 +24,7 @@ class SkinCancerDataset(CustomDataset):
     """
     rootDir = "data/skin-lesions/download/"
 
-    def __init__(self, transform, mode="train", binary_mapping=True, use_minority_augmentation=False, minority_threshold=1000):
+    def __init__(self, transform, mode="train", binary_mapping=False, use_minority_augmentation=False, minority_threshold=1000):
         self.name="Skin Lesions"
 
         super().__init__(self.rootDir, transform, mode, binary_mapping, use_minority_augmentation)

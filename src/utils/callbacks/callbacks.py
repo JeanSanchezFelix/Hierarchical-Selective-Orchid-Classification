@@ -1,5 +1,6 @@
 import torch
 import logging
+import os
 
 # TODO: split up each callback into different files? Example: ModelCheckPoint.py, EarlyStopping.py, etc.
 class Callback:
@@ -64,15 +65,15 @@ class ModelCheckpoint(Callback):
         if self.mode == 'min':
             return current < self.best_score
         return current > self.best_score
-
+    # TODO: Seperate weights and other metadata
     def _save_model(self, logs):
-        torch.save({"model": logs["model"].state_dict(),
-                    "batch_size": logs["batch_size"],
+        torch.save(logs["model"].state_dict(), self.save_path)
+        torch.save({"batch_size": logs["batch_size"],
                     "learning_rate": logs["learning_rate"],
-                    "criterion": str(type(logs["criterion"])),
+                    "criterion": logs["criterion"],
                     "optimizer": logs["optimizer"].state_dict(),
                     "epoch": logs["epoch"],
-                    }, self.save_path)
+                    }, os.path.join(os.path.dirname(self.save_path), "metadata.pth"))
         if self.verbose:
             logging.info(f"Model saved to {self.save_path}")
 
@@ -130,13 +131,13 @@ class EarlyStopping(Callback):
         return current > self.best_score + self.min_delta
 
     def _save_model(self, logs):
-        torch.save({"model": logs["model"].state_dict(),
-                    "batch_size": logs["batch_size"],
+        torch.save(logs["model"].state_dict(), self.save_path)
+        torch.save({"batch_size": logs["batch_size"],
                     "learning_rate": logs["learning_rate"],
-                    "criterion": str(type(logs["criterion"])),
+                    "criterion": type(logs["criterion"]),
                     "optimizer": logs["optimizer"].state_dict(),
                     "epoch": logs["epoch"],
-                    }, self.save_path)
+                    }, os.path.join(os.path.dirname(self.save_path), "metadata.pth"))
         if self.verbose:
             logging.info(f"Model saved to {self.save_path}")
 
