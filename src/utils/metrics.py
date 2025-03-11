@@ -33,7 +33,7 @@ def calculate_metrics(y_true, y_pred, y_proba = None) -> dict[str, float]:
     if y_proba is not None:
         if num_classes == 2:
             # For binary, assume probabilities for the positive class are in column index 1.
-            metrics["AUC-Score"] = roc_auc_score(y_true, y_proba[:, 1])
+            metrics["AUC-Score"] = roc_auc_score(y_true, y_proba[:, 0])
         else:
             # For multiclass, compute the AUC using one-vs-rest probabilities.
             metrics["AUC-Score"] = roc_auc_score(y_true, y_proba, multi_class='ovr', average='macro')
