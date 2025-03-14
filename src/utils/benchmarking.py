@@ -161,41 +161,47 @@ def measure_memory_usage(
             logging.warning("psutil not available; cannot measure CPU memory usage.")
     return peak_memory
 
-def model_size(model: torch.nn.Module) -> None:
+def model_size(model) -> tuple[float, float]:
     """
-    Return the size of the given model.
-    
+    Computes the size of a PyTorch model in TorchScript and .pth formats.
+
     Parameters:
-        model (nn.Module): The model to inspect.
+        model (torch.nn.Module): The model to be evaluated.
 
     Returns:
-        size (float): The size of the model in MB.
+        tuple[float, float]: TorchScript size (MB), .pth size (MB)
     """
+    temp_script_path = "temp_model.pt"
+    temp_pth_path = "temp.pth"
+    
     try:
-        # Convert model to TorchScript if it isn't already
-        scripted_model = model if isinstance(model, torch.jit.ScriptModule) else torch.jit.script(model)
-        # Save the TorchScript model
-        torch.jit.save(scripted_model, "temp_model.pt")
+        # Convert to TorchScript if the model is not already scripted
+        if not isinstance(model, torch.jit.ScriptModule):
+            scripted_model = torch.jit.script(model)
+        else:
+            scripted_model = model
         
-        # Save the full model (including architecture) in .pth format
-        torch.save(model, "temp.pth")
+        # Save TorchScript model
+        torch.jit.save(scripted_model, temp_script_path)
+        
+        # Save standard PyTorch model (.pth)
+        torch.save(model, temp_pth_path)
 
-        script_size = os.path.getsize('temp_model.pt') / 1e6
-        pth_size = os.path.getsize('temp.pth') / 1e6
-        
-        # Get and print model sizes in MB
+        # Measure file sizes
+        script_size = os.path.getsize(temp_script_path) / 1e6 if os.path.exists(temp_script_path) else 0.0
+        pth_size = os.path.getsize(temp_pth_path) / 1e6 if os.path.exists(temp_pth_path) else 0.0
+
         print(f"Model size as TorchScript: {script_size:.4f} MB")
         print(f"Model size as Pth: {pth_size:.4f} MB")
+        
+        return script_size, pth_size
     
     finally:
         # Clean up temporary files
-        if os.path.exists("temp_model.pt"):
-            os.remove("temp_model.pt")
-        if os.path.exists("temp.pth"):
-            os.remove("temp.pth")
-
-    return script_size, pth_size
-
+        if os.path.exists(temp_script_path):
+            os.remove(temp_script_path)
+        if os.path.exists(temp_pth_path):
+            os.remove(temp_pth_path)
 
 # Example usage:
 # Assume model, test_loader, device are defined.
