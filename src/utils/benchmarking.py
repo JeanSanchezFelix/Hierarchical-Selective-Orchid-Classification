@@ -176,13 +176,14 @@ def model_size(model) -> tuple[float, float]:
     
     try:
         # Convert to TorchScript if the model is not already scripted
-        if not isinstance(model, torch.jit.ScriptModule):
-            scripted_model = torch.jit.script(model)
-        else:
-            scripted_model = model
+        # if not isinstance(model, torch.jit.ScriptModule):
+        #     scripted_model = torch.jit.script(model)
+        # else:
+        #     scripted_model = model
         
+        # TODO: change back to scipter_model
         # Save TorchScript model
-        torch.jit.save(scripted_model, temp_script_path)
+        torch.jit.save(model, temp_script_path)
         
         # Save standard PyTorch model (.pth)
         torch.save(model, temp_pth_path)
