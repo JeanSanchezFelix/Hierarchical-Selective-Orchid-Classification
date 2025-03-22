@@ -173,7 +173,7 @@ def setup_optimizer(model, optimizer_name: str, learning_rate: float):
 
     return opt
 
-def training_setup(model_name: str, 
+def tf_setup(model_name: str, 
                 learning_rate: float, 
                 criterion: str, 
                 optimizer: str, 
@@ -198,6 +198,6 @@ def training_setup(model_name: str,
     # Configure model, criterion, and optimizer
     num_classes = len(dataloader.dataset.classes)
     model = setup_model(model_name, pretrained_weights, num_classes)
-    criterion = setup_criterion(criterion, dataloader, class_weights)
-    optimizer = setup_optimizer(model, optimizer, learning_rate)
-    return model, criterion, optimizer
+    criterion_fn = setup_criterion(criterion, dataloader, class_weights)
+    optimizer_obj = setup_optimizer(model, optimizer, learning_rate)
+    return model, criterion_fn, optimizer_obj

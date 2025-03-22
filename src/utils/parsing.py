@@ -172,7 +172,7 @@ def parse() -> dict[str, int | str | list]:
                                  help="Monitor for EarlyStopping.")
     callback_group.add_argument("--EarlyStopping_patience", type=int, default=5, 
                                  help="Patience for EarlyStopping.")
-    callback_group.add_argument("--EarlyStopping_min_delta", type=float, default=0.0, 
+    callback_group.add_argument("--EarlyStopping_min_delta", type=float, default=1e-4, 
                                  help="Minimum delta for EarlyStopping.")
     callback_group.add_argument("--EarlyStopping_mode", type=str, choices=["min", "max"], default="min", 
                                  help="Mode for EarlyStopping.")
@@ -186,9 +186,9 @@ def parse() -> dict[str, int | str | list]:
                                  help="Monitor for ReduceLROnPlateau_monitor.")
     callback_group.add_argument("--ReduceLROnPlateau_factor", type=float, default=0.1, 
                                  help="Factor by which to reduce LR for ReduceLROnPlateau.")
-    callback_group.add_argument("--ReduceLROnPlateau_patience", type=int, default=5, 
+    callback_group.add_argument("--ReduceLROnPlateau_patience", type=int, default=10, 
                                  help="Patience for ReduceLROnPlateau.")
-    callback_group.add_argument("--ReduceLROnPlateau_min_delta", type=float, default=0.0, 
+    callback_group.add_argument("--ReduceLROnPlateau_min_delta", type=float, default=1e-4, 
                                  help="Minimum delta for ReduceLROnPlateau.")
     callback_group.add_argument("--ReduceLROnPlateau_mode", type=str, choices=["min", "max"], default="min", 
                                  help="Mode for ReduceLROnPlateau.")
@@ -210,6 +210,7 @@ def parse() -> dict[str, int | str | list]:
     # Miscellaneous parameters group
     misc_group = parser.add_argument_group("Miscellaneous")
     misc_group.add_argument("--save_dir", type=str, default="./models", help="Directory to save models.")
+    misc_group.add_argument("--save_name", type=str, default="best_model", help="Name to be used for saving model.")
     misc_group.add_argument("--config_file", type=str, help="Path to a YAML, CSV or JSON configuration file.")
     misc_group.add_argument('--logging', action="store_true", help='Enable CLI logging: 0 (False), 1 (True)')
     

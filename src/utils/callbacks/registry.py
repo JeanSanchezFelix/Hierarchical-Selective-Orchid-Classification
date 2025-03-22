@@ -11,7 +11,8 @@ CALLBACK_REGISTRY = {
 
 def process_callbacks(args: dict) -> dict[str, Callback]:
     """
-     Dynamically map callback-specific arguments based on user-specified callbacks.
+    Dynamically map callback-specific arguments based on user-specified callbacks,
+    with default values for missing parameters.
 
     Parameters:
         args (dict): Dictionary of all parsed arguments.
@@ -23,29 +24,36 @@ def process_callbacks(args: dict) -> dict[str, Callback]:
     for name in args['callbacks']:
         if name not in CALLBACK_REGISTRY:
             raise ValueError(f"Callback '{name}' is not recognized. Available callbacks: {list(CALLBACK_REGISTRY.keys())}")
-        
+
+        # Common save path for callbacks that need it
+        save_path = f"{args.get('save_dir', './')}/{args.get('model_name', 'model')}_{args.get('save_name', 'checkpoint')}.pth"
+
         if name == "ModelCheckpoint":
             callbacks[name] = CALLBACK_REGISTRY[name](
-                monitor=args['ModelCheckpoint_monitor'], 
-                save_best_only=args['ModelCheckpoint_save_best_only'], 
-                mode=args['ModelCheckpoint_mode'],
-                save_path=f"{args['save_dir']}/{args['model_name']}_best_model.pth",   
-                verbose=args['ModelCheckpoint_verbose'])
+                monitor=args.get('ModelCheckpoint_monitor', 'val_loss'),
+                save_best_only=args.get('ModelCheckpoint_save_best_only', True),
+                mode=args.get('ModelCheckpoint_mode', 'min'),
+                save_path=save_path,
+                verbose=args.get('ModelCheckpoint_verbose', False)
+            )
         elif name == "EarlyStopping":
             callbacks[name] = CALLBACK_REGISTRY[name](
-                monitor=args['EarlyStopping_monitor'], 
-                patience=args['EarlyStopping_patience'], 
-                min_delta=args['EarlyStopping_min_delta'],
-                mode=args['EarlyStopping_mode'], 
-                save_path=f"{args['save_dir']}/{args['model_name']}_best_model.pth", 
-                verbose=args['EarlyStopping_verbose'])
+                monitor=args.get('EarlyStopping_monitor', 'val_loss'),
+                patience=args.get('EarlyStopping_patience', 5),
+                min_delta=args.get('EarlyStopping_min_delta', 1e-4),
+                mode=args.get('EarlyStopping_mode', 'min'),
+                save_path=save_path,
+                verbose=args.get('EarlyStopping_verbose', False)
+            )
         elif name == "ReduceLROnPlateau":
             callbacks[name] = CALLBACK_REGISTRY[name](
-                monitor=args['ReduceLROnPlateau_monitor'], 
-                factor=args['ReduceLROnPlateau_factor'], 
-                patience=args['ReduceLROnPlateau_patience'], 
-                min_delta=args['ReduceLROnPlateau_min_delta'], 
-                mode=args['ReduceLROnPlateau_mode'], 
-                min_lr=args['ReduceLROnPlateau_min_lr'], 
-                verbose=args['ReduceLROnPlateau_verbose'])
+                monitor=args.get('ReduceLROnPlateau_monitor', 'val_loss'),
+                factor=args.get('ReduceLROnPlateau_factor', 0.1),
+                patience=args.get('ReduceLROnPlateau_patience', 10),
+                min_delta=args.get('ReduceLROnPlateau_min_delta', 1e-4),
+                mode=args.get('ReduceLROnPlateau_mode', 'min'),
+                min_lr=args.get('ReduceLROnPlateau_min_lr', 1e-6),
+                verbose=args.get('ReduceLROnPlateau_verbose', False)
+            )
+
     return callbacks
