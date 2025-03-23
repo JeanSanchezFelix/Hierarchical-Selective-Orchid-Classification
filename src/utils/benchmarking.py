@@ -171,42 +171,20 @@ def model_size(model) -> tuple[float, float]:
     Returns:
         tuple[float, float]: TorchScript size (MB), .pth size (MB)
     """
-    temp_script_path = "temp_model.pt"
     temp_pth_path = "temp.pth"
     
-    try:
-        # Convert to TorchScript if the model is not already scripted
-        # if not isinstance(model, torch.jit.ScriptModule):
-        #     scripted_model = torch.jit.script(model)
-        # else:
-        #     scripted_model = model
-        
-        # TODO: change back to scipter_model
-        # Save TorchScript model
-        torch.jit.save(model, temp_script_path)
-        
+    try:        
         # Save standard PyTorch model (.pth)
-        torch.save(model, temp_pth_path)
+        torch.save(model.state_dict(), temp_pth_path)
 
         # Measure file sizes
-        script_size = os.path.getsize(temp_script_path) / 1e6 if os.path.exists(temp_script_path) else 0.0
         pth_size = os.path.getsize(temp_pth_path) / 1e6 if os.path.exists(temp_pth_path) else 0.0
 
-        print(f"Model size as TorchScript: {script_size:.4f} MB")
         print(f"Model size as Pth: {pth_size:.4f} MB")
         
-        return script_size, pth_size
+        return pth_size
     
     finally:
         # Clean up temporary files
-        if os.path.exists(temp_script_path):
-            os.remove(temp_script_path)
         if os.path.exists(temp_pth_path):
             os.remove(temp_pth_path)
-
-# Example usage:
-# Assume model, test_loader, device are defined.
-# avg_time1, throughput1 = measure_inference_performance(model1, test_loader, device)
-# avg_time2, throughput2 = measure_inference_performance(model2, test_loader, device)
-# speedup = calculate_speedup(avg_time1, throughput1, avg_time2, throughput2)
-# memory_usage = measure_memory_usage(model1, test_loader, device)

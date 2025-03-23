@@ -20,21 +20,6 @@ def calibrate_model(model: torch.nn.Module, data_loader: DataLoader, device: tor
             # Forward pass to collect activation statistics
             model(images.to(device))
 
-def get_custom_qconfig() -> QConfig:
-    """
-    Creates a custom QConfig with explicit quant_min and quant_max settings for observers.
-    
-    Returns:
-        QConfig: The custom quantization configuration.
-    """
-    # Define a custom observer for activations with explicit quantization range.
-    activation_observer = MinMaxObserver.with_args(quant_min=0, quant_max=255, dtype=torch.quint8)
-    
-    # Define a custom observer for weights with symmetric quantization range.
-    weight_observer = MinMaxObserver.with_args(quant_min=-127, quant_max=127, dtype=torch.qint8)
-    
-    return QConfig(activation=activation_observer, weight=weight_observer)
-
 def quantize_model(model: nn.Module, example_input: torch.Tensor, eval_loader: DataLoader) -> nn.Module:
     """
     Performs FX Graph Mode Post-Training Static Quantization on the given model.

@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from sklearn.model_selection import KFold
 from src.utils.metrics import plot_train_val_curve, calculate_metrics
-from src.utils.model_setup import training_setup
+from src.utils.model_setup import tf_setup
 from src.utils.eval import test_inference, compute_loss_and_predictions
 
 def train_models(
@@ -43,16 +43,15 @@ def train_models(
     logging.info("Loading datasets...")
     train_loader = data_loaders["train"]
     val_loader = data_loaders["val"]
-    # test_loader = data_loaders["test"]
     logging.info("Datasets loaded successfully.")
     
-    model, criterion, optimizer = training_setup(model_name, 
-                                                 learning_rate, 
-                                                 criterion, 
-                                                 optimizer, 
-                                                 pretrained_weights, 
-                                                 train_loader, 
-                                                 class_weights=train_loader.dataset if class_weights else None)
+    model, criterion, optimizer = tf_setup(model_name, 
+                                           learning_rate, 
+                                           criterion, 
+                                           optimizer, 
+                                           pretrained_weights, 
+                                           train_loader, 
+                                           class_weights=class_weights)
 
     # Freeze base layers if specified
     if freeze_base:
@@ -101,7 +100,7 @@ def train_models(
     plot_train_val_curve(loss_dict, save_path=os.path.join(metrics_save_dir, "loss_curve.png"))
 
     if data_loaders["test"]:
-        test_inference(model, criterion, data_loaders["test"], device, metrics_save_dir)
+        test_inference(model, data_loaders["test"], device, metrics_save_dir)
 
     return model
 
