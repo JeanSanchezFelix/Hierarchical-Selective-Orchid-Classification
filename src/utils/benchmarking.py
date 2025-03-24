@@ -13,7 +13,7 @@ except ImportError:
 
 def measure_inference_performance(
     model: nn.Module,
-    data_loader: DataLoader,
+    dataloader: DataLoader,
     device: torch.device,
     num_warmup: int = 5,
     num_trials: int = 50
@@ -26,7 +26,7 @@ def measure_inference_performance(
 
     Parameters:
         model (nn.Module): The model to evaluate.
-        data_loader (DataLoader): DataLoader to supply inference data.
+        dataloader (DataLoader): DataLoader to supply inference data.
         device (torch.device): Device to perform inference on (CPU or GPU).
         num_warmup (int): Number of warm-up iterations (batches) before timing.
         num_trials (int): Number of batches to run for timing inference.
@@ -38,29 +38,29 @@ def measure_inference_performance(
     """
     model.eval()
     total_time = 0.0
-    total_samples = len(data_loader.dataset)
+    total_samples = len(dataloader.dataset)
 
     # Warm-up loop: run a few iterations without recording time.
     with torch.no_grad():
-        warmup_iter = iter(data_loader)
+        warmup_iter = iter(dataloader)
         for _ in range(num_warmup):
             try:
                 inputs, _ = next(warmup_iter)
             except StopIteration:
                 # Restart the iterator if necessary.
-                warmup_iter = iter(data_loader)
+                warmup_iter = iter(dataloader)
                 inputs, _ = next(warmup_iter)
             inputs = inputs.to(device)
             _ = model(inputs)
 
     # Timing loop: run for a fixed number of batches.
-    trial_iter = iter(data_loader)
+    trial_iter = iter(dataloader)
     with torch.no_grad():
         for _ in range(num_trials):
             try:
                 inputs, _ = next(trial_iter)
             except StopIteration:
-                trial_iter = iter(data_loader)
+                trial_iter = iter(dataloader)
                 inputs, _ = next(trial_iter)
             inputs = inputs.to(device)
             batch_size = inputs.size(0)
@@ -115,7 +115,7 @@ def calculate_speedup(
 
 def measure_memory_usage(
     model: nn.Module,
-    data_loader: DataLoader,
+    dataloader: DataLoader,
     device: torch.device,
     num_batches: int = 10
 ) -> float:
@@ -127,7 +127,7 @@ def measure_memory_usage(
 
     Parameters:
         model (nn.Module): The model to evaluate.
-        data_loader (DataLoader): DataLoader to supply inference data.
+        dataloader (DataLoader): DataLoader to supply inference data.
         device (torch.device): Device on which inference is performed.
         num_batches (int): Number of batches to run for measuring memory usage.
 
@@ -138,12 +138,12 @@ def measure_memory_usage(
     if device.type == 'cuda':
         torch.cuda.reset_peak_memory_stats(device)
         with torch.no_grad():
-            batch_iter = iter(data_loader)
+            batch_iter = iter(dataloader)
             for _ in range(num_batches):
                 try:
                     inputs, _ = next(batch_iter)
                 except StopIteration:
-                    batch_iter = iter(data_loader)
+                    batch_iter = iter(dataloader)
                     inputs, _ = next(batch_iter)
                 inputs = inputs.to(device)
                 _ = model(inputs)
@@ -179,8 +179,6 @@ def model_size(model) -> tuple[float, float]:
 
         # Measure file sizes
         pth_size = os.path.getsize(temp_pth_path) / 1e6 if os.path.exists(temp_pth_path) else 0.0
-
-        print(f"Model size as Pth: {pth_size:.4f} MB")
         
         return pth_size
     
@@ -188,3 +186,35 @@ def model_size(model) -> tuple[float, float]:
         # Clean up temporary files
         if os.path.exists(temp_pth_path):
             os.remove(temp_pth_path)
+
+def benchmark(model1, model2, dataloader, device):
+    """
+    Benchmarks two models by measuring their size, inference performance, and memory usage.
+    The results are presented in a formatted table.
+
+    Parameters:
+        model1: The first model (e.g., teacher model).
+        model2: The second model (e.g., student model).
+        dataloader: DataLoader for supplying input data.
+        device: Device on which to run inference (e.g., CPU or GPU).
+    """
+    # Measure model sizes.
+    teacher_size = model_size(model1)
+    student_size = model_size(model2)
+
+    # Measure inference performance.
+    avg_time_teacher, throughput_teacher = measure_inference_performance(model1, dataloader=dataloader, device=device)
+    avg_time_student, throughput_student = measure_inference_performance(model2, dataloader=dataloader, device=device)
+    speedup = calculate_speedup(avg_time_teacher, throughput_teacher, avg_time_student, throughput_student)
+
+    # Measure memory usage.
+    memory_usage_teacher = measure_memory_usage(model=model1, dataloader=dataloader, device=device)
+    memory_usage_student = measure_memory_usage(model=model2, dataloader=dataloader, device=device)
+
+    print(f"Model Size for Model1: {teacher_size:.4f} MB")
+    print(f"Model Size for Model2: {student_size:.4f} MB")
+    print(f"Teacher Inference Time: {avg_time_teacher:.6f} sec, Throughput: {throughput_teacher:.2f} samples/sec")
+    print(f"Student Inference Time: {avg_time_student:.6f} sec, Throughput: {throughput_student:.2f} samples/sec")
+    print("Speedups:", speedup)
+    print("Teacher Memory Usage:", memory_usage_teacher)
+    print("Student Memory Usage:", memory_usage_student)

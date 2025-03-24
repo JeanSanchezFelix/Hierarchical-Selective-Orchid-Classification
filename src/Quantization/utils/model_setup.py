@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from typing import Optional
 from src.utils.model_setup import setup_model, setup_criterion, setup_optimizer
 from torch.ao.quantization import QConfig, MinMaxObserver, MovingAverageMinMaxObserver, HistogramObserver, PerChannelMinMaxObserver
-from torch.ao.quantization.quantize_fx import prepare_qat_fx, convert_fx
+from torch.ao.quantization.quantize_fx import prepare_qat_fx
 
 def setup_qat_student_model(model_name: str, num_classes: int) -> nn.Module:
     """
@@ -91,46 +91,63 @@ def get_custom_qconfig(config: str) -> QConfig:
     """
     Creates a custom quantization configuration (QConfig) for QAT based on the specified configuration.
 
-    Supports multiple configurations such as "x86", "qnnpack", "fbgemm", and a default setting.
+    The configuration can be tailored for specific deployment scenarios:
     
+      - "x86": For server/desktop CPUs. Uses per-tensor observers (compatible with FX conversion).
+      - "qnnpack": For mobile (ARM) devices. Uses moving average observers for smoother calibration.
+      - "fbgemm": For server inference. (Default fbgemm often uses per-channel quantization for weights,
+                  but here we force per-tensor for FX compatibility; adjust if needed.)
+      - "edge": For edge devices. Configured for a balance between model size and inference efficiency.
+
     Parameters:
-        config (str): The desired quantization configuration.
+        config (str): The desired quantization configuration identifier.
     
     Returns:
         QConfig: The corresponding quantization configuration.
     """
     if config == "x86":
+        # Use per-tensor observers which are supported by FX conversion.
         activation_observer = MinMaxObserver.with_args(
             quant_min=0, quant_max=255, dtype=torch.quint8, qscheme=torch.per_tensor_affine
         )
         weight_observer = MinMaxObserver.with_args(
             quant_min=-127, quant_max=127, dtype=torch.qint8, qscheme=torch.per_tensor_symmetric
         )
-    
     elif config == "qnnpack":
+        # MovingAverageMinMaxObserver is often recommended for mobile environments.
         activation_observer = MovingAverageMinMaxObserver.with_args(
             quant_min=0, quant_max=255, dtype=torch.quint8, qscheme=torch.per_tensor_affine
         )
         weight_observer = MovingAverageMinMaxObserver.with_args(
             quant_min=-127, quant_max=127, dtype=torch.qint8, qscheme=torch.per_tensor_symmetric
         )
-    
     elif config == "fbgemm":
+        # fbgemm is typically used in server environments. While fbgemm default config may use
+        # per-channel quantization for weights, we force per-tensor for FX conversion compatibility.
         activation_observer = HistogramObserver.with_args(
             quant_min=0, quant_max=255, dtype=torch.quint8, qscheme=torch.per_tensor_affine
         )
-        weight_observer = PerChannelMinMaxObserver.with_args(
-            quant_min=-127, quant_max=127, dtype=torch.qint8, qscheme=torch.per_channel_symmetric
+        # For FX conversion compatibility, we use per_tensor_symmetric here.
+        weight_observer = MinMaxObserver.with_args(
+            quant_min=-127, quant_max=127, dtype=torch.qint8, qscheme=torch.per_tensor_symmetric
         )
-    
-    else:  # Default configuration (fallback)
+    elif config == "edge":
+        # For edge devices, one may choose observers that are tuned for low-latency and reduced model size.
+        # Here we use a slightly modified configuration that might, for instance, lower the dynamic range.
         activation_observer = MinMaxObserver.with_args(
             quant_min=0, quant_max=255, dtype=torch.quint8, qscheme=torch.per_tensor_affine
         )
         weight_observer = MinMaxObserver.with_args(
             quant_min=-127, quant_max=127, dtype=torch.qint8, qscheme=torch.per_tensor_symmetric
         )
-
+    else:
+        # Fallback to a default configuration.
+        activation_observer = MinMaxObserver.with_args(
+            quant_min=0, quant_max=255, dtype=torch.quint8, qscheme=torch.per_tensor_affine
+        )
+        weight_observer = MinMaxObserver.with_args(
+            quant_min=-127, quant_max=127, dtype=torch.qint8, qscheme=torch.per_tensor_symmetric
+        )
     return QConfig(activation=activation_observer, weight=weight_observer)
 
 
