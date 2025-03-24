@@ -6,7 +6,7 @@ from torchvision import transforms, datasets, models
 from torch.utils.data import DataLoader
 from typing import Optional
 from src.utils.model_setup import setup_model, setup_criterion, setup_optimizer
-from torch.ao.quantization import QConfig, MinMaxObserver
+from torch.ao.quantization import QConfig, MinMaxObserver, MovingAverageMinMaxObserver, HistogramObserver, PerChannelMinMaxObserver
 from torch.ao.quantization.quantize_fx import prepare_qat_fx, convert_fx
 
 def setup_qat_student_model(model_name: str, num_classes: int) -> nn.Module:
@@ -86,24 +86,56 @@ def setup_qat_student_model(model_name: str, num_classes: int) -> nn.Module:
     
     return model
 
-def get_custom_qconfig() -> QConfig:
+#TODO: Fix custom configs to deal with UserWarning. They do not match the source code.
+def get_custom_qconfig(config: str) -> QConfig:
     """
-    Creates a custom quantization configuration (QConfig) for QAT with explicit 
-    quantization range settings for activation and weight observers.
+    Creates a custom quantization configuration (QConfig) for QAT based on the specified configuration.
 
-    The activation observer is configured with a quantization range of [0, 255]
-    and dtype=torch.quint8, while the weight observer uses a symmetric range of 
-    [-127, 127] with dtype=torch.qint8.
-
+    Supports multiple configurations such as "x86", "qnnpack", "fbgemm", and a default setting.
+    
+    Parameters:
+        config (str): The desired quantization configuration.
+    
     Returns:
-        QConfig: The custom quantization configuration.
+        QConfig: The corresponding quantization configuration.
     """
-    activation_observer = MinMaxObserver.with_args(quant_min=0, quant_max=255, dtype=torch.quint8)
-    weight_observer = MinMaxObserver.with_args(quant_min=-127, quant_max=127, dtype=torch.qint8)
+    if config == "x86":
+        activation_observer = MinMaxObserver.with_args(
+            quant_min=0, quant_max=255, dtype=torch.quint8, qscheme=torch.per_tensor_affine
+        )
+        weight_observer = MinMaxObserver.with_args(
+            quant_min=-127, quant_max=127, dtype=torch.qint8, qscheme=torch.per_tensor_symmetric
+        )
+    
+    elif config == "qnnpack":
+        activation_observer = MovingAverageMinMaxObserver.with_args(
+            quant_min=0, quant_max=255, dtype=torch.quint8, qscheme=torch.per_tensor_affine
+        )
+        weight_observer = MovingAverageMinMaxObserver.with_args(
+            quant_min=-127, quant_max=127, dtype=torch.qint8, qscheme=torch.per_tensor_symmetric
+        )
+    
+    elif config == "fbgemm":
+        activation_observer = HistogramObserver.with_args(
+            quant_min=0, quant_max=255, dtype=torch.quint8, qscheme=torch.per_tensor_affine
+        )
+        weight_observer = PerChannelMinMaxObserver.with_args(
+            quant_min=-127, quant_max=127, dtype=torch.qint8, qscheme=torch.per_channel_symmetric
+        )
+    
+    else:  # Default configuration (fallback)
+        activation_observer = MinMaxObserver.with_args(
+            quant_min=0, quant_max=255, dtype=torch.quint8, qscheme=torch.per_tensor_affine
+        )
+        weight_observer = MinMaxObserver.with_args(
+            quant_min=-127, quant_max=127, dtype=torch.qint8, qscheme=torch.per_tensor_symmetric
+        )
+
     return QConfig(activation=activation_observer, weight=weight_observer)
 
 
-def quantization_mode(model: torch.nn.Module, mode: str, example_inputs: torch.Tensor = None, config: str = "x86") -> torch.nn.Module:
+
+def quantization_mode(model: torch.nn.Module, mode: str, example_inputs: torch.Tensor = None, config: str = "qnnpack") -> torch.nn.Module:
     """
     Prepares the given model for quantization-aware training (QAT) using either Eager Mode 
     or FX Graph Mode.
@@ -117,8 +149,7 @@ def quantization_mode(model: torch.nn.Module, mode: str, example_inputs: torch.T
         model (torch.nn.Module): The model to be quantized.
         mode (str): The quantization mode, either 'eager' or 'fx'.
         example_inputs (torch.Tensor, optional): A sample input tensor required for FX Graph Mode.
-        config (str): The configuration identifier. If "x86", the default QAT QConfig for x86 is used;
-                      otherwise, a custom QConfig is returned via get_custom_qconfig().
+        config (str): The configuration identifier. 
 
     Returns:
         torch.nn.Module: The model prepared for quantization-aware training.
@@ -126,7 +157,7 @@ def quantization_mode(model: torch.nn.Module, mode: str, example_inputs: torch.T
     Raises:
         ValueError: If 'fx' mode is selected without providing example_inputs or if an invalid mode is given.
     """
-    qconfig = torch.ao.quantization.get_default_qat_qconfig('x86') if config == "x86" else get_custom_qconfig()
+    qconfig = torch.ao.quantization.get_default_qat_qconfig(config)
 
     if mode == "eager":
         model.fuse_model(is_qat=True)  # Fuse modules where possible
@@ -153,7 +184,7 @@ def qat_kd_setup(student: str,
                  teacher_model_weights: bool, 
                  dataloader: torch.utils.data.DataLoader,
                  quant_mode: str = "fx",
-                 config: str = "x86",
+                 config: str = "qnnpack",
                  class_weights: bool = False,
                  device: torch.device = torch.device("cuda")   # Use "cuda" if GPU is available
 ) -> tuple[nn.Module, nn.Module, nn.Module, torch.optim.Optimizer]:
@@ -179,8 +210,8 @@ def qat_kd_setup(student: str,
         dataloader (torch.utils.data.DataLoader): DataLoader used for obtaining example inputs and 
                                                     for calculating class weights.
         quant_mode (str, optional): Quantization mode ('fx' or 'eager'). Defaults to "fx".
-        config (str, optional): Configuration identifier; "x86" uses default QAT QConfig for x86, 
-                                otherwise a custom QConfig is used. Defaults to "x86".
+        config (str, optional): Configuration identifier; "qnnpack" uses default QAT QConfig for qnnpack, 
+                                otherwise a custom QConfig is used. Defaults to "qnnpack".
         class_weights (bool, optional): Whether to compute and apply class weights in the loss function.
                                         Defaults to False.
         device (torch.device, optional): Device to perform operations on. Defaults to torch.device("cuda").
