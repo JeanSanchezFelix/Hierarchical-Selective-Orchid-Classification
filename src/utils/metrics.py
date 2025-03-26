@@ -3,6 +3,8 @@ import seaborn as sns
 import numpy as np
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, roc_auc_score, confusion_matrix, roc_curve, auc
 from sklearn.preprocessing import label_binarize
+from typing import Optional, Union
+
 # Use a colorblind-friendly palette
 sns.set_palette("colorblind")
 
@@ -85,56 +87,78 @@ def plot_metric_bar(metrics: dict, title: str = "Performance Metrics", save_path
     # Save or show plot
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
-    # plt.show()
+    else:
+        plt.show()
 
-
-def plot_confusion_matrix(y_true, y_pred, labels=None, title: str = "Confusion Matrix", save_path: str = None):
+def plot_confusion_matrix(
+    y_true: Union[list, np.ndarray], 
+    y_pred: Union[list, np.ndarray], 
+    labels: Optional[list[str]] = None, 
+    title: str = "Confusion Matrix", 
+    save_path: Optional[str] = None
+) -> None:
     """
-    Plots a confusion matrix heatmap.
+    Plots a confusion matrix heatmap with improved label readability.
     
     Args:
-        y_true (list or ndarray): True labels.
-        y_pred (list or ndarray): Predicted labels.
-        labels (list): List of class labels.
-        title (str): Title of the plot.
-        save_path (str): Optional path to save the plot.
+        y_true (list or ndarray): True labels for the classification task.
+        y_pred(list or ndarray): Predicted labels for the classification task.
+        labels (list): Optional list of class labels. If None, unique labels will be extracted.
+        title (str): Title of the confusion matrix plot.
+        save_path (str): Optional file path to save the plot.
     """
-        # Compute confusion matrix
-    cm = confusion_matrix(y_true, y_pred, normalize="true")  # Normalize values
+    # Compute confusion matrix with true normalization
+    cm = confusion_matrix(y_true, y_pred, normalize="true")
     
-    # Create figure and axis
-    fig, ax = plt.subplots(figsize=(8, 6))
+    # If labels not provided, extract unique labels
+    if labels is None:
+        labels = np.unique(np.concatenate([y_true, y_pred])).tolist()
     
-    # Plot confusion matrix with adjusted text size
+    # Create figure with increased width to accommodate labels
+    plt.figure(figsize=(10, 8))
+    
+    # Create heatmap with improved readability
     sns.heatmap(
-        cm, annot=True, fmt=".2f", cmap="Blues", xticklabels=labels, 
-        yticklabels=labels, ax=ax, annot_kws={"size": 10}  # Set font size inside squares
+        cm, 
+        annot=True,  # Show numerical values
+        fmt=".2f",   # Two decimal places
+        cmap="Blues",  # Color scheme
+        cbar_kws={'label': 'Normalized Frequency'},  # Colorbar label
+        xticklabels=labels,
+        yticklabels=labels,
+        annot_kws={"fontsize": 12}  # Smaller font for annotations
     )
     
-    # Adjust x-axis and y-axis tick positions to align labels with heatmap squares
-    ax.set_xticks(np.arange(len(labels)) + 0.5)  
-    ax.set_yticks(np.arange(len(labels)) + 0.5)  
-
-    # Properly align x and y labels in the middle of the squares
-    ax.set_xticklabels(labels, rotation=45, ha="center")  # Center horizontally
-    ax.set_yticklabels(labels, rotation=45, va="center")   # Center vertically
-
-    # Adjust tick parameters to move x-axis labels slightly down
-    ax.xaxis.set_tick_params(length=0, labelsize=10, pad=10)  # Moves labels down a bit
-    ax.yaxis.set_tick_params(length=0, labelsize=10)
-
-    # Increase font size of axis labels
-    ax.set_title(title, fontsize=18)
-    ax.set_xlabel("Predicted Labels", fontsize=18, labelpad=10)  # Add padding to move label
-    ax.set_ylabel("True Labels", fontsize=18)
-
-    # Ensure the layout prevents label cutoff
+    # Adjust tick positions to center labels in squares
+    plt.xticks(
+        np.arange(len(labels)) + 0.5,  # Center labels in squares
+        labels, 
+        rotation=45,  # 45-degree angle
+        ha='right',   # Horizontal alignment
+        rotation_mode='anchor'  # Ensures rotation is applied from the right
+    )
+    
+    plt.yticks(
+        np.arange(len(labels)) + 0.5,  # Center labels in squares
+        labels, 
+        rotation=45,  # 45-degree angle
+        ha='right',   # Horizontal alignment
+        rotation_mode='anchor'  # Ensures rotation is applied from the right
+    )
+    
+    # Set title and axis labels
+    plt.title(title, fontsize=16, pad=20)
+    plt.xlabel("Predicted Labels", fontsize=12, labelpad=10)
+    plt.ylabel("True Labels", fontsize=12, labelpad=10)
+    
+    # Ensure layout is tight to prevent label cutoff
     plt.tight_layout()
-
-    # Save or show plot
+    
+    # Save or display the plot
     if save_path:
-        plt.savefig(save_path, bbox_inches='tight')
-    # plt.show()
+        plt.savefig(save_path, bbox_inches='tight', dpi=300)
+    else:
+        plt.show()
 
 
 def plot_train_val_curve(metrics: dict, metric_name: str = "Loss", 
@@ -163,7 +187,8 @@ def plot_train_val_curve(metrics: dict, metric_name: str = "Loss",
     # Save or show plot
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
-    # plt.show()
+    else:
+        plt.show()
 
 def plot_roc_auc_curve(y_true, y_proba, title="ROC-AUC Curve", save_path=None):
     """
@@ -208,7 +233,8 @@ def plot_roc_auc_curve(y_true, y_proba, title="ROC-AUC Curve", save_path=None):
     # Save or show plot
     if save_path:
         plt.savefig(save_path, bbox_inches="tight")
-    # plt.show()
+    else:
+        plt.show()
 
 def plot_radar_chart(metrics, title="Radar Chart for Metrics", save_path=None):
     """
@@ -258,5 +284,6 @@ def plot_radar_chart(metrics, title="Radar Chart for Metrics", save_path=None):
     # Save or show the plot
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
-    # plt.show()
+    else:
+        plt.show()
 

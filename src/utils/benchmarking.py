@@ -231,6 +231,65 @@ def _gpu_power_sampler(stop_event: threading.Event, sampling_interval: float, re
         results.append(power)
         time.sleep(sampling_interval)
 
+def measure_idle_power_consumption(
+    device: torch.device,
+    idle_duration: float = 5.0,
+    sampling_interval: float = 0.1
+) -> float:
+    """
+    Measures the average idle power consumption (in Watts) over a specified duration.
+
+    For CUDA devices, it samples power using nvidia-smi in a background thread.
+    For CPU devices, if pyRAPL is available, it uses pyRAPL to measure energy consumption while idle.
+
+    Args:
+        device (torch.device): Device on which to measure power consumption.
+        idle_duration (float): Duration (in seconds) over which to measure idle power.
+        sampling_interval (float): Time interval (in seconds) between power samples (for GPU).
+
+    Returns:
+        float: Average idle power consumption in Watts.
+    """
+    # For GPU, use nvidia-smi to sample power during idle.
+    if device.type == "cuda":
+        power_samples: list[float] = []
+        stop_event = threading.Event()
+        # Start the background thread for power sampling.
+        sampler_thread = threading.Thread(target=_gpu_power_sampler, args=(stop_event, sampling_interval, power_samples))
+        sampler_thread.start()
+        # Sleep for the idle duration to let the GPU settle in idle.
+        time.sleep(idle_duration)
+        # Signal the sampling thread to stop and wait for it.
+        stop_event.set()
+        sampler_thread.join()
+        avg_idle_power = sum(power_samples) / len(power_samples) if power_samples else 0.0
+        logging.info(f"Average GPU idle power consumption: {avg_idle_power:.2f} Watts")
+        return avg_idle_power
+
+    # For CPU, attempt to use pyRAPL if available.
+    else:
+        if pyRAPL is None:
+            logging.warning("pyRAPL is not available; cannot measure CPU power consumption.")
+            return 0.0
+        try:
+            pyRAPL.setup()
+            meter = pyRAPL.Measurement('inference')
+            start_time = time.time()
+            # Measure energy consumption while idle.
+            with meter:
+                time.sleep(idle_duration)
+            total_time = time.time() - start_time
+            # Convert energy from microjoules to joules.
+            total_energy = (meter.result.pkg if hasattr(meter.result, 'pkg') else 0.0)
+            avg_idle_power = (total_energy[0] / total_time if total_time > 0 else 0.0) / 1e6
+            logging.info(f"Average CPU idle power consumption (pyRAPL): {avg_idle_power:.2f} Watts")
+            return avg_idle_power
+        except PermissionError as e:
+            logging.warning(f"pyRAPL permission error: {e}")
+        except Exception as e:
+            logging.warning(f"pyRAPL measurement failed: {e}")
+
+
 def measure_power_consumption(
     model: nn.Module,
     dataloader: DataLoader,
@@ -289,24 +348,29 @@ def measure_power_consumption(
         if pyRAPL is None:
             logging.warning("pyRAPL is not available; cannot measure CPU power consumption.")
             return 0.0
-        
-        pyRAPL.setup()
-        meter = pyRAPL.Measurement('inference')
-        start_time = time.time()
-        with meter:
-            trial_iter = iter(dataloader)
-            for _ in range(num_batches):
-                try:
-                    inputs, _ = next(trial_iter)
-                except StopIteration:
-                    trial_iter = iter(dataloader)
-                    inputs, _ = next(trial_iter)
-                _ = model(inputs)
-        total_time = time.time() - start_time
-        total_energy = meter.result.pkg if hasattr(meter.result, 'pkg') else 0.0
-        avg_power = total_energy / total_time if total_time > 0 else 0.0
-        logging.info(f"Average CPU power consumption: {avg_power:.2f} Watts")
-        return avg_power
+        try:
+            pyRAPL.setup()
+            meter = pyRAPL.Measurement('inference')
+            start_time = time.time()
+            with meter:
+                trial_iter = iter(dataloader)
+                for _ in range(num_batches):
+                    try:
+                        inputs, _ = next(trial_iter)
+                    except StopIteration:
+                        trial_iter = iter(dataloader)
+                        inputs, _ = next(trial_iter)
+                    _ = model(inputs)
+            total_time = time.time() - start_time
+            # Convert energy from microjoules to joules.
+            total_energy = (meter.result.pkg if hasattr(meter.result, 'pkg') else 0.0)
+            avg_power = (total_energy[0] / total_time if total_time > 0 else 0.0) / 1e6
+            logging.info(f"Average CPU power consumption: {avg_power:.2f} Watts")
+            return avg_power
+        except PermissionError as e:
+            logging.warning(f"pyRAPL permission error: {e}")
+        except Exception as e:
+            logging.warning(f"pyRAPL measurement failed: {e}")
 
 
 def measure_latency_percentiles(
@@ -396,6 +460,9 @@ def benchmark(model1: nn.Module, model2: nn.Module, dataloader: DataLoader, devi
     mem_usage1 = measure_memory_usage(model1, dataloader, device)
     mem_usage2 = measure_memory_usage(model2, dataloader, device)
 
+    # Idle power consumption
+    idle_power = measure_idle_power_consumption(device=device, idle_duration=5.0, sampling_interval=0.1)
+
     # Measure power consumption.
     power1 = measure_power_consumption(model1, dataloader, device)
     power2 = measure_power_consumption(model2, dataloader, device)
@@ -419,6 +486,7 @@ def benchmark(model1: nn.Module, model2: nn.Module, dataloader: DataLoader, devi
             "Inference Time (sec/sample)",
             "Throughput (samples/sec)",
             "Memory Usage (MB)",
+            "Idle Power (Watts)",
             "Avg Power (Watts)",
             "Energy per Sample (Joules)",
             "Throughput per Watt (samples/sec/W)",
@@ -433,6 +501,7 @@ def benchmark(model1: nn.Module, model2: nn.Module, dataloader: DataLoader, devi
             f"{avg_time1:.6f}",
             f"{throughput1:.2f}",
             f"{mem_usage1:.2f}",
+            f"{idle_power:.2f}",
             f"{power1:.2f}",
             f"{energy_efficiency1:.6f}",
             f"{tpw1:.2f}",
@@ -447,6 +516,7 @@ def benchmark(model1: nn.Module, model2: nn.Module, dataloader: DataLoader, devi
             f"{avg_time2:.6f}",
             f"{throughput2:.2f}",
             f"{mem_usage2:.2f}",
+            "-",
             f"{power2:.2f}",
             f"{energy_efficiency2:.6f}",
             f"{tpw2:.2f}",
