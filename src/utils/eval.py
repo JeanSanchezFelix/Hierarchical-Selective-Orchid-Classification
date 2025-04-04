@@ -3,11 +3,11 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
-import onnxruntime as ort
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 from datasets.registry import DATASET_REGISTRY
+from src.Quantization.utils.conversions.litert import is_quantized_model
 from src.utils.model_setup import setup_model
 from src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_roc_auc_curve, plot_radar_chart
 
@@ -145,10 +145,16 @@ def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.devi
         test_loader (DataLoader): DataLoader for the test dataset.
         device (torch.device): Device to perform inference on (CPU or GPU).
         save_dir (str): Directory to save plots. If None, plots will not be saved.
+        quant (bool): Flag to indicate if the model is quantized. Default is False.
     """
     logging.info("Starting inference on the test dataset...")
     
-    model.eval()  # Set model to evaluation mode.
+    # Set model to evaluation mode.
+    if is_quantized_model(model):
+        torch.ao.quantization.move_exported_model_to_eval(model)
+    else:
+        model.eval()
+
     predictions, ground_truths, probabilities = [], [], []
     class_labels = test_loader.dataset.classes
 
@@ -210,6 +216,7 @@ def test_inference_onnx(
         device (torch.device): Device to use for inference (typically CPU for ONNX).
         save_dir (str): Directory to save plots. If None, plots will not be saved.
     """
+    import onnxruntime as ort
     # Load the ONNX model with ONNX Runtime.
     session = ort.InferenceSession(onnx_model_path)
     input_name = session.get_inputs()[0].name

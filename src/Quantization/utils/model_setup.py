@@ -1,13 +1,13 @@
-import os
 import torch
 import torch.nn as nn
 import torchvision.models.quantization as quant_models
-from torchvision import transforms, datasets, models
-from torch.utils.data import DataLoader
 from typing import Optional
 from src.utils.model_setup import setup_model, setup_criterion, setup_optimizer
-from torch.ao.quantization import QConfig, MinMaxObserver, MovingAverageMinMaxObserver, HistogramObserver, PerChannelMinMaxObserver
+from torch.ao.quantization import QConfig, MinMaxObserver, MovingAverageMinMaxObserver, HistogramObserver
 from torch.ao.quantization.quantize_fx import prepare_qat_fx
+from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e
+from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
+# from ai_edge_torch.quantize import pt2e_quantizer, quant_config
 
 def setup_qat_student_model(model_name: str, num_classes: int) -> nn.Module:
     """
@@ -152,7 +152,7 @@ def get_custom_qconfig(config: str) -> QConfig:
 
 
 
-def quantization_mode(model: torch.nn.Module, mode: str, example_inputs: torch.Tensor = None, config: str = "qnnpack") -> torch.nn.Module:
+def quantization_mode(model: torch.nn.Module, mode: str, example_inputs: tuple[torch.Tensor] = None, config: str = "qnnpack") -> torch.nn.Module:
     """
     Prepares the given model for quantization-aware training (QAT) using either Eager Mode 
     or FX Graph Mode.
@@ -189,8 +189,18 @@ def quantization_mode(model: torch.nn.Module, mode: str, example_inputs: torch.T
         # Assume prepare_qat_fx is imported/defined elsewhere.
         model = prepare_qat_fx(model, qconfig_mapping, example_inputs)
         print("Model prepared using FX Graph Mode QAT.")
+    elif mode == "export":
+        model = torch.export.export_for_training(model, example_inputs).module()
+        quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config(is_qat=True))
+
+        # quantizer = pt2e_quantizer.PT2EQuantizer().set_global(
+        #     pt2e_quantizer.get_symmetric_quantization_config()
+        # )
+        model = prepare_qat_pt2e(model, quantizer)
+        # qat_prepared_model = convert(model, sample_input, quant_config=quant_config.QuantConfig(pt2e_quantizer=quantizer),)
+        print("Model prepared using Export Mode QAT.")
     else:
-        raise ValueError("Invalid mode. Choose either 'eager' or 'fx'.")
+        raise ValueError("Invalid mode. Choose either 'eager', 'fx' or 'export'.")
     return model
 
 def qat_kd_setup(student: str,
@@ -200,7 +210,7 @@ def qat_kd_setup(student: str,
                  optimizer: str, 
                  teacher_model_weights: Optional[str], 
                  dataloader: torch.utils.data.DataLoader,
-                 quant_mode: str = "fx",
+                 quant_mode: str = "export",
                  config: str = "qnnpack",
                  class_weights: bool = False,
                  device: torch.device = torch.device("cuda")   # Use "cuda" if GPU is available
@@ -243,12 +253,12 @@ def qat_kd_setup(student: str,
     num_classes = len(dataloader.dataset.classes)
 
     # Load the student model as a quantization-aware (QAT) model.
-    student_model = setup_qat_student_model(student, num_classes)
-    student_model.train()
+    student_model = setup_model(student, None, num_classes)
+    # student_model.train()
 
     # Get example inputs from the dataloader for QAT preparation.
     example_inputs = next(iter(dataloader))[0].to(device)
-    student_model = quantization_mode(student_model, quant_mode, example_inputs=example_inputs, config=config)
+    student_model = quantization_mode(student_model, quant_mode, example_inputs=(example_inputs,), config=config)
 
     # Load the teacher model (with fine-tuned weights) using the separate teacher setup function.
     teacher_model = setup_model(teacher, teacher_model_weights, num_classes)

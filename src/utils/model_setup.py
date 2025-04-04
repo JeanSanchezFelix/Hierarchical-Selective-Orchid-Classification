@@ -94,7 +94,7 @@ def setup_model(model_name: str, pretrained_weights: Optional[str], num_classes:
     if use_custom_weights:
         if os.path.exists(pretrained_weights):
             # Load the custom weights from the file path
-            state_dict = torch.load(pretrained_weights, map_location='cpu')
+            state_dict = torch.load(pretrained_weights, map_location='cpu', weights_only=True)
             model.load_state_dict(state_dict)
             logging.info(f"Custom pre-trained weights loaded from: {pretrained_weights}")
         else:

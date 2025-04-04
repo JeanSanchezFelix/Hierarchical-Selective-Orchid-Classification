@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader
+from src.Quantization.utils.conversions.litert import is_quantized_model
 
 try:
     import psutil
@@ -46,7 +47,12 @@ def warm_up(model: nn.Module, dataloader: DataLoader, device: torch.device, num_
         device (torch.device): Device on which to run inference.
         num_warmup (int): Number of warm-up batches.
     """
-    model.eval()
+    # Set model to evaluation mode.
+    if is_quantized_model(model):
+        torch.ao.quantization.move_exported_model_to_eval(model)
+    else:
+        model.eval()
+
     with torch.no_grad():
         warmup_iter = iter(dataloader)
         for _ in range(num_warmup):
@@ -78,14 +84,24 @@ def measure_inference_performance(
     Returns:
         tuple[float, float]: (avg_time_per_sample in seconds, throughput in samples/sec)
     """
-    model.eval()
+    # Set model to evaluation mode.
+    if is_quantized_model(model):
+        torch.ao.quantization.move_exported_model_to_eval(model)
+    else:
+        model.eval()
+        
     total_time = 0.0
     total_samples = len(dataloader.dataset)
 
     # Warm up before timing.
     warm_up(model, dataloader, device, num_warmup=num_warmup)
 
-    model.eval()
+    # Set model to evaluation mode.
+    if is_quantized_model(model):
+        torch.ao.quantization.move_exported_model_to_eval(model)
+    else:
+        model.eval()
+
     total_time = 0.0
     total_samples = len(dataloader.dataset)
 
@@ -169,7 +185,12 @@ def measure_memory_usage(
         float: Peak memory usage in MB.
     """
     warm_up(model, dataloader, device, num_warmup=num_warmup)
-    model.eval()
+    # Set model to evaluation mode.
+    if is_quantized_model(model):
+        torch.ao.quantization.move_exported_model_to_eval(model)
+    else:
+        model.eval()
+
     if device.type == 'cuda':
         torch.cuda.reset_peak_memory_stats(device)
         with torch.no_grad():
@@ -319,7 +340,12 @@ def measure_power_consumption(
     # Warm up the model
     warm_up(model, dataloader, device, num_warmup=num_warmup)
     
-    model.eval()
+    # Set model to evaluation mode.
+    if is_quantized_model(model):
+        torch.ao.quantization.move_exported_model_to_eval(model)
+    else:
+        model.eval()
+
     # GPU measurement.
     if device.type == "cuda":
         power_samples = []
@@ -392,7 +418,13 @@ def measure_latency_percentiles(
         dict[str, float]: Dictionary with keys 'p50', 'p95', and 'p99' representing latency percentiles in seconds.
     """
     warm_up(model, dataloader, device)
-    model.eval()
+
+    # Set model to evaluation mode.
+    if is_quantized_model(model):
+        torch.ao.quantization.move_exported_model_to_eval(model)
+    else:
+        model.eval()
+        
     latencies: list[float] = []
     
     with torch.no_grad():
