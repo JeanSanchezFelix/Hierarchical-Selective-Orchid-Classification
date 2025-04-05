@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 from datasets.registry import DATASET_REGISTRY
-from src.Quantization.utils.conversions.litert import is_quantized_model
+from src.Quantization.quantization_utils.conversions.litert import is_quantized_model
 from src.utils.model_setup import setup_model
 from src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_roc_auc_curve, plot_radar_chart
 

@@ -2,12 +2,15 @@ import torch
 import torch.nn as nn
 import torchvision.models.quantization as quant_models
 from typing import Optional
-from src.utils.model_setup import setup_model, setup_criterion, setup_optimizer
+
+from torch.utils.data import DataLoader
 from torch.ao.quantization import QConfig, MinMaxObserver, MovingAverageMinMaxObserver, HistogramObserver
 from torch.ao.quantization.quantize_fx import prepare_qat_fx
 from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e
 from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 # from ai_edge_torch.quantize import pt2e_quantizer, quant_config
+
+from src.utils.model_setup import setup_model, setup_criterion, setup_optimizer
 
 def setup_qat_student_model(model_name: str, num_classes: int) -> nn.Module:
     """
@@ -31,7 +34,7 @@ def setup_qat_student_model(model_name: str, num_classes: int) -> nn.Module:
         - shufflenet_v2_x1_5
         - shufflenet_v2_x2_0
         
-    Args:
+    Parameters:
         model_name (str): Name of the model.
         num_classes (int): Number of output classes.
         
@@ -152,80 +155,100 @@ def get_custom_qconfig(config: str) -> QConfig:
 
 
 
-def quantization_mode(model: torch.nn.Module, mode: str, example_inputs: tuple[torch.Tensor] = None, config: str = "qnnpack") -> torch.nn.Module:
+def quantization_mode(
+    model: torch.nn.Module, 
+    mode: str, 
+    example_inputs: Optional[tuple[torch.Tensor, ...]] = None, 
+    config: str = None
+) -> torch.nn.Module:
     """
-    Prepares the given model for quantization-aware training (QAT) using either Eager Mode 
-    or FX Graph Mode.
+    Prepares the given model for quantization-aware training (QAT) using one of three modes:
+    'eager', 'fx', or 'export'.
 
-    For 'eager' mode, the model is fused (where possible), assigned a QAT configuration, and 
-    prepared in-place using torch.ao.quantization.prepare_qat.
-    For 'fx' mode, a sample input is required to trace the model graph; the model is configured 
-    with a QConfigMapping and prepared using FX-based QAT preparation.
-
+    For 'eager' mode:
+        - The model is fused where possible.
+        - The default QAT QConfig for the given configuration (e.g., 'qnnpack') is assigned.
+        - The model is prepared in-place using torch.ao.quantization.prepare_qat.
+    For 'fx' mode:
+        - A sample input is required to trace the model graph.
+        - A QConfigMapping is created with the given QConfig.
+        - The model is prepared using FX-based QAT preparation.
+    For 'export' mode:
+        - The model is exported for training and then prepared using a PT2E quantizer.
+    
     Parameters:
         model (torch.nn.Module): The model to be quantized.
-        mode (str): The quantization mode, either 'eager' or 'fx'.
-        example_inputs (torch.Tensor, optional): A sample input tensor required for FX Graph Mode.
-        config (str): The configuration identifier. 
-
+        mode (str): The quantization mode; valid options are 'eager', 'fx', or 'export'.
+        example_inputs (Optional[tuple[torch.Tensor, ...]]): A tuple of sample input tensors required for FX Graph and Export Mode. Defaults to None.
+        config (str): The configuration identifier. For example, "qnnpack" uses the default QAT QConfig 
+                      for qnnpack; other values may trigger a custom QConfig.
+    
     Returns:
         torch.nn.Module: The model prepared for quantization-aware training.
-
+    
     Raises:
-        ValueError: If 'fx' mode is selected without providing example_inputs or if an invalid mode is given.
+        ValueError: If 'fx' mode is selected without providing example_inputs, or if an invalid mode is given.
     """
-    qconfig = torch.ao.quantization.get_default_qat_qconfig(config)
+    if config:
+        qconfig = torch.ao.quantization.get_default_qat_qconfig(config)
 
     if mode == "eager":
-        model.fuse_model(is_qat=True)  # Fuse modules where possible
+        # Fuse the model layers where possible (for improved efficiency).
+        model.fuse_model(is_qat=True)
         model.qconfig = qconfig
+        # Prepare the model in-place for quantization-aware training.
         torch.ao.quantization.prepare_qat(model, inplace=True)
         print("Model prepared using Eager Mode QAT.")
     elif mode == "fx":
+        # FX Graph Mode requires example inputs for tracing the model.
         if example_inputs is None:
             raise ValueError("example_inputs is required for FX Graph Mode QAT.")
+        # Create a QConfigMapping with the global qconfig.
         qconfig_mapping = torch.ao.quantization.QConfigMapping().set_global(qconfig)
         model.qconfig = qconfig_mapping
-        # Assume prepare_qat_fx is imported/defined elsewhere.
+        # Prepare the model using FX-based QAT preparation.
         model = prepare_qat_fx(model, qconfig_mapping, example_inputs)
         print("Model prepared using FX Graph Mode QAT.")
     elif mode == "export":
+        # Export Mode requires example inputs.
+        if example_inputs is None:
+            raise ValueError("example_inputs is required for Export Mode QAT.")
+        # Export the model for training and apply PT2E quantization.
         model = torch.export.export_for_training(model, example_inputs).module()
+        # Configure the quantizer with a symmetric quantization configuration.
         quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config(is_qat=True))
-
-        # quantizer = pt2e_quantizer.PT2EQuantizer().set_global(
-        #     pt2e_quantizer.get_symmetric_quantization_config()
-        # )
         model = prepare_qat_pt2e(model, quantizer)
-        # qat_prepared_model = convert(model, sample_input, quant_config=quant_config.QuantConfig(pt2e_quantizer=quantizer),)
         print("Model prepared using Export Mode QAT.")
     else:
         raise ValueError("Invalid mode. Choose either 'eager', 'fx' or 'export'.")
+    
     return model
 
-def qat_kd_setup(student: str,
-                 teacher: str, 
-                 learning_rate: float, 
-                 criterion: str, 
-                 optimizer: str, 
-                 teacher_model_weights: Optional[str], 
-                 dataloader: torch.utils.data.DataLoader,
-                 quant_mode: str = "export",
-                 config: str = "qnnpack",
-                 class_weights: bool = False,
-                 device: torch.device = torch.device("cuda")   # Use "cuda" if GPU is available
+
+def qat_kd_setup(
+    student: str,
+    teacher: str, 
+    learning_rate: float, 
+    criterion: str, 
+    optimizer: str, 
+    teacher_model_weights: Optional[str], 
+    dataloader: DataLoader,
+    quant_mode: str = "export",
+    config: str = None,
+    class_weights: bool = False,
+    device: torch.device = torch.device("cuda")
 ) -> tuple[nn.Module, nn.Module, nn.Module, torch.optim.Optimizer]:
     """
-    Sets up the teacher and student models, loss function, and optimizer for knowledge distillation 
-    combined with quantization-aware training (QAT).
+    Sets up the teacher and student models, loss function, and optimizer for a combined 
+    Knowledge Distillation (KD) and Quantization-Aware Training (QAT) pipeline.
 
-    This function performs the following:
-      - Loads the student model (quantization-ready) using its model name.
-      - Prepares the student model for QAT according to the specified quantization mode 
-        (either 'fx' or 'eager') using example inputs from the dataloader.
-      - Loads the teacher model (with fine-tuned weights) using a separate setup function.
-      - Configures the loss function with optional class weights.
-      - Configures the optimizer for the student model.
+    The function performs the following steps:
+      1. Loads the student model as a standard model and then prepares it for QAT using the 
+         specified quantization mode (e.g., 'eager', 'fx', or 'export'). Example inputs are 
+         extracted from the provided dataloader for QAT preparation.
+      2. Loads the teacher model with fine-tuned weights using a separate setup function.
+      3. Configures the loss function (with optional class weighting) and optimizer for training 
+         the student model.
 
     Parameters:
         student (str): Name of the student model (to be loaded as a quantization-aware model).
@@ -233,34 +256,37 @@ def qat_kd_setup(student: str,
         learning_rate (float): Learning rate for the optimizer.
         criterion (str): Name of the loss function to use (e.g., "cross_entropy").
         optimizer (str): Name of the optimizer to use (e.g., "adam").
-        teacher_model_weights (bool): Flag indicating whether to load custom weights for the teacher model.
-        dataloader (torch.utils.data.DataLoader): DataLoader used for obtaining example inputs and 
-                                                    for calculating class weights.
-        quant_mode (str, optional): Quantization mode ('fx' or 'eager'). Defaults to "fx".
-        config (str, optional): Configuration identifier; "qnnpack" uses default QAT QConfig for qnnpack, 
-                                otherwise a custom QConfig is used. Defaults to "qnnpack".
+        teacher_model_weights (Optional[str]): Path to the teacher model's pre-trained weights. If None,
+                                               default weights are used.
+        dataloader (DataLoader): DataLoader used for obtaining example inputs (and for calculating 
+                                   class weights if needed).
+        quant_mode (str, optional): Quantization mode to use for the student model ('eager', 'fx', or 'export').
+                                    Defaults to "export".
+        config (str, optional): QAT configuration identifier. "qnnpack" uses the default QAT QConfig for qnnpack;
+                                otherwise, a custom QConfig is used. Defaults to "qnnpack".
         class_weights (bool, optional): Whether to compute and apply class weights in the loss function.
                                         Defaults to False.
         device (torch.device, optional): Device to perform operations on. Defaults to torch.device("cuda").
-
+    
     Returns:
         Tuple[nn.Module, nn.Module, nn.Module, torch.optim.Optimizer]: A tuple containing:
-            - teacher_model: The loaded teacher model.
+            - teacher_model: The teacher model loaded with fine-tuned weights.
             - student_model: The student model prepared for quantization-aware training.
             - criterion: The configured loss function.
             - optimizer: The configured optimizer for the student model.
     """
+    # Determine the number of classes from the dataloader.
     num_classes = len(dataloader.dataset.classes)
 
-    # Load the student model as a quantization-aware (QAT) model.
+    # Load the student model (as a standard model) using the provided student model name.
     student_model = setup_model(student, None, num_classes)
-    # student_model.train()
-
-    # Get example inputs from the dataloader for QAT preparation.
+    
+    # Obtain example inputs from the dataloader for QAT preparation.
     example_inputs = next(iter(dataloader))[0].to(device)
+    # Prepare the student model for QAT using the specified quantization mode.
     student_model = quantization_mode(student_model, quant_mode, example_inputs=(example_inputs,), config=config)
 
-    # Load the teacher model (with fine-tuned weights) using the separate teacher setup function.
+    # Load the teacher model (with fine-tuned weights) using the provided teacher model name and weights.
     teacher_model = setup_model(teacher, teacher_model_weights, num_classes)
 
     # Configure the loss function with optional class weights.
