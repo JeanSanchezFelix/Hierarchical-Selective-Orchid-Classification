@@ -216,7 +216,8 @@ def quantization_mode(
         # Export the model for training and apply PT2E quantization.
         model = torch.export.export_for_training(model, example_inputs).module()
         # Configure the quantizer with a symmetric quantization configuration.
-        quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config(is_qat=True))
+        operator_config = get_symmetric_quantization_config(is_per_channel=False, is_qat=True)
+        quantizer = XNNPACKQuantizer().set_global(operator_config)
         model = prepare_qat_pt2e(model, quantizer)
         print("Model prepared using Export Mode QAT.")
     else:

@@ -31,6 +31,8 @@ def load_args_from_file(file_path: str) -> dict[str,str]:
         raise ValueError(f"Error reading the config file: {e}")
     return args_from_file
 
+# TODO: new logging format
+# FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 # Configure logging
 def configure_logging(logs: bool, save_dir: str):
     """
@@ -89,7 +91,7 @@ def validate_args(args):
     if args["train_split"] + args["test_split"] >= 1.0:
         raise ValueError("The sum of train_split and test_split must be less than 1.0.")
     if args["pretrained_weights"] and not os.path.exists(args["pretrained_weights"]):
-        raise ValueError(f"The specified pretrained weights ({args["pretrained_weights"]:}) do not exist.")
+        raise ValueError(f"The specified pretrained weights ({args['pretrained_weights']:}) do not exist.")
 
     # Logging configuration details
     logging.info("Configuration:")
