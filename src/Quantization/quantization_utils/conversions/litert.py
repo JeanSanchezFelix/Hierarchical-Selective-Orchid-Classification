@@ -3,7 +3,6 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
-import ai_edge_torch
 from typing import Optional
 from torch.ao.quantization.quantize_pt2e import convert_pt2e
 from torch.ao.quantization.quantize_fx import convert_fx
@@ -54,6 +53,7 @@ def convert_pytorch_model_to_tflite(model: nn.Module, save_dir: str, example_inp
     Returns:
         None
     """
+    import ai_edge_torch
     logging.info("Converting PyTorch model to TensorFlow Lite format.")
     # Ensure the model is in evaluation mode for export.
     torch.ao.quantization.move_exported_model_to_eval(model)

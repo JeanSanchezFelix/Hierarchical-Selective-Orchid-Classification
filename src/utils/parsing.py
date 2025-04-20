@@ -31,41 +31,6 @@ def load_args_from_file(file_path: str) -> dict[str,str]:
         raise ValueError(f"Error reading the config file: {e}")
     return args_from_file
 
-# TODO: new logging format
-# FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-# Configure logging
-def configure_logging(logs: bool, save_dir: str):
-    """
-    Configures logging to write to a file and optionally to the console.
-
-    Parameters:
-        logs (bool): Whether to log messages to the console.
-        save_dir (str): Directory where the log file will be saved.
-    """
-    os.makedirs(save_dir, exist_ok=True)
-    log_file = os.path.join(save_dir, 'training.log')
-
-    # Create or retrieve the root logger
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-
-    # Clear existing handlers to prevent duplicates
-    if logger.hasHandlers():
-        logger.handlers.clear()
-
-    # File handler for writing logs to a file
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(file_handler)
-
-    # Optional stream handler for logging to the console
-    if logs:
-        stream_handler = logging.StreamHandler()
-        stream_handler.setLevel(logging.INFO)
-        stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        logger.addHandler(stream_handler)
-
 def validate_args(args):
     """
     Validate the parsed arguments.
