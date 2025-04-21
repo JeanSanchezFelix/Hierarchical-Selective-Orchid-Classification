@@ -1,5 +1,7 @@
 import time
+import os
 import logging
+import numpy as np
 from tqdm import tqdm
 from typing import Callable, Optional, Any
 import torch
@@ -36,6 +38,76 @@ def compute_distillation_loss(teacher_logits: torch.Tensor, student_logits: torc
         reduction='batchmean'
     ) * (T ** 2)
     return soft_loss
+
+# TODO: Finish
+def _train_knowledge_distillation(student: nn.Module,
+    train_loader: DataLoader,
+    criterion,
+    optimizer,
+    device: torch.device,
+    epoch: int,
+    epochs: int,
+    logs: dict,
+    quant_mode: str,
+    T: float,
+    soft_target_loss_weight: float,
+    ce_loss_weight: float,
+) -> float:
+    
+    torch.ao.quantization.move_exported_model_to_train(student)
+    running_loss, total_samples = 0.0, 0
+    predictions, ground_truths, probabilities = [], [], []
+
+    with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{epochs}") as pbar:
+        for inputs, labels in train_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            optimizer.zero_grad() # Zero gradients during training
+
+            # Teacher forward pass without gradient computation.
+            with torch.no_grad():
+                teacher = teacher.to(device)
+                teacher_logits = teacher(inputs)
+
+            student = student.to(device)
+            student_logits = student(inputs)
+
+            # Compute soft targets loss using KL divergence.
+            soft_loss = compute_distillation_loss(teacher_logits=teacher_logits, student_logits=student_logits, T=T)
+
+            # Compute the true label loss and obtain predictions/probabilities
+            label_loss, probs, preds = compute_loss_and_predictions(student_logits, labels, criterion)
+            
+            # Combine the losses using the specified weights.
+            loss = soft_target_loss_weight * soft_loss + ce_loss_weight * label_loss
+            loss.backward()
+            optimizer.step()
+
+            # Update running loss and sample count
+            batch_size = inputs.size(0)
+            running_loss += loss.item() * batch_size
+            total_samples += batch_size
+
+            # Accumulate predictions and ground truths for metrics
+            ground_truths.extend(labels.cpu().detach().numpy())
+            probabilities.extend(probs.cpu().detach().numpy())
+            predictions.extend(preds.cpu().detach().numpy())
+            
+            # Update progress bar with average loss so far
+            pbar.set_postfix(loss=f"{running_loss / total_samples:.4f}")
+            pbar.update(1)
+
+    # Compute aggregated metrics after epoch
+    train_loss = running_loss / total_samples
+
+    # Calculate metrics
+    y_true, y_pred = np.array(ground_truths), np.array(predictions)
+    y_proba = np.array(probabilities) if probabilities else None
+    metrics = calculate_metrics(y_true, y_pred, y_proba)
+
+    logging.info(f"Train Loss: {train_loss:.4f}")
+    logging.info(f"Train Metrics: " + ", ".join([f"{key.lower()}: {value:.4g}" for key, value in metrics.items()]))
+    logs.update({f"train_loss": train_loss, **{f"train_{key.lower()}": value for key, value in metrics.items()}})
+    return train_loss
 
 def train_knowledge_distillation(
     teacher: nn.Module,

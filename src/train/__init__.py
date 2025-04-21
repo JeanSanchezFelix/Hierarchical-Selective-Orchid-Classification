@@ -1,2 +1,2 @@
 from .train import *
-from .Knowledge_Distillation import *
+from .knowledge_distillation import *

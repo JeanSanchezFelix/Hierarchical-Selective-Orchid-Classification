@@ -56,7 +56,7 @@ def evaluate(model_path: str, metadata_path: str, img_size: int, dataset: str, s
     model.load_state_dict(model_data)
     model.to(device)  # Move the model to the same device as the inputs
 
-    test_inference(model, criterion, test_loader, device, save_dir)
+    test_inference(model, test_loader, device, criterion, save_dir)
 
 def compute_loss_and_predictions(outputs: torch.Tensor,
                                 labels: torch.Tensor,
@@ -111,7 +111,7 @@ def compute_loss_and_predictions(outputs: torch.Tensor,
 
     return loss, probs, preds
 
-def compute_predictions(outputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def _compute_predictions(outputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Computes predicted probabilities and class labels solely based on model outputs.
 
@@ -136,18 +136,18 @@ def compute_predictions(outputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tens
         _, preds = torch.max(probs, dim=1)
     return probs, preds
 
-def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.device, save_dir: str = None) -> None:
+def test_inference(model: nn.Module, data_loader: DataLoader, device, criterion=None, save_dir=None) -> dict | None:
     """
-    Performs inference on the test dataset, computes metrics, and optionally saves plots.
+    Performs inference on a dataset, computes metrics, and optionally saves plots.
 
     Parameters:
         model (nn.Module): The trained model.
-        test_loader (DataLoader): DataLoader for the test dataset.
+        data_loader (DataLoader): DataLoader for the test dataset.
         device (torch.device): Device to perform inference on (CPU or GPU).
         save_dir (str): Directory to save plots. If None, plots will not be saved.
         quant (bool): Flag to indicate if the model is quantized. Default is False.
     """
-    logging.info("Starting inference on the test dataset...")
+    logging.info("Starting inference...")
     
     # Set model to evaluation mode.
     if is_quantized_model(model):
@@ -155,33 +155,34 @@ def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.devi
     else:
         model.eval()
 
+    running_loss, total_samples = 0.0, 0
     predictions, ground_truths, probabilities = [], [], []
-    class_labels = test_loader.dataset.classes
+    class_labels = data_loader.dataset.classes
 
     with torch.no_grad():  # Disable gradient computation
-        for inputs, labels in tqdm(test_loader, desc="Inference Progress"):
+        for inputs, labels in tqdm(data_loader, desc="Inference Progress"):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
 
-            probs, preds = compute_predictions(outputs)
+            loss = criterion(outputs, labels).item() if criterion else 0.0
+            probs, preds = _compute_predictions(outputs)
+
+            batch_size = inputs.size(0)
+            running_loss += loss * batch_size
+            total_samples += batch_size
 
             ground_truths.extend(labels.cpu().numpy())
             predictions.extend(preds.cpu().numpy())
             probabilities.extend(probs.cpu().numpy())
 
-    logging.info("Inference complete.")
-    
-    # Calculate metrics.
-    y_true = np.array(ground_truths)
-    y_pred = np.array(predictions)
-    y_proba = np.array(probabilities) if probabilities else None
+    logging.info("Inference complete.")   
 
+    # Calculate metrics.
+    y_true, y_pred = np.array(ground_truths), np.array(predictions)
+    y_proba = np.array(probabilities) if probabilities else None
     metrics = calculate_metrics(y_true, y_pred, y_proba)
 
-    # Print the metrics.
-    print("Metrics Results:")
-    for metric, value in metrics.items():
-        print(f"{metric}: {value:.4f}")
+    metrics["loss"] = running_loss / total_samples
 
     # Generate and save plots if save_dir is provided.
     if save_dir:
@@ -198,6 +199,8 @@ def test_inference(model: nn.Module, test_loader: DataLoader, device: torch.devi
             plot_roc_auc_curve(y_true, y_proba, save_path=os.path.join(save_dir, "roc_auc_curve.png"))
         plot_radar_chart(metrics, save_path=os.path.join(save_dir, "radar_chart.png"))
         logging.info(f"Plots saved to {save_dir}")
+    
+    return metrics
 
 def test_inference_onnx(
     onnx_model_path: str,

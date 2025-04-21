@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import torch
+import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
@@ -10,7 +11,7 @@ from src.utils.metrics import plot_train_val_curve, calculate_metrics
 from src.utils.model_setup import tf_setup
 from src.utils.eval import test_inference, compute_loss_and_predictions
 
-def train_models(
+def transfer_learning(
     model_name: str,
     data_loaders: dict[str, DataLoader],
     save_dir: str,
@@ -84,7 +85,7 @@ def train_models(
     logging.info("Starting training...")
     start = time.time()
 
-    loss_dict = train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion, optimizer, epochs, device, callbacks)
+    loss_dict = _train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion, optimizer, epochs, device, callbacks)
 
     time_elapsed = time.time() - start
     logging.info(f"Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s")
@@ -100,11 +101,61 @@ def train_models(
     plot_train_val_curve(loss_dict, save_path=os.path.join(metrics_save_dir, "loss_curve.png"))
 
     if data_loaders["test"]:
-        test_inference(model, data_loaders["test"], device, metrics_save_dir)
+        test_inference(model, data_loaders["test"], device, save_dir=metrics_save_dir)
 
     return model
 
-def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion, optimizer, epochs, device, callbacks) -> dict[str,list]:
+def _train(model: nn.Module,
+    train_loader: DataLoader,
+    criterion,
+    optimizer,
+    device: torch.device,
+    epoch: int,
+    epochs: int,
+    logs: dict
+) -> float:
+    model.train()
+    running_loss, total_samples = 0.0, 0
+    predictions, ground_truths, probabilities = [], [], []
+
+    with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{epochs}") as pbar:
+        for inputs, labels in train_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            optimizer.zero_grad() # Zero gradients during training
+
+            outputs = model(inputs)
+            loss, probs, preds = compute_loss_and_predictions(outputs, labels, criterion)
+            loss.backward()
+            optimizer.step()
+
+            # Update running loss and sample count
+            batch_size = inputs.size(0)
+            running_loss += loss.item() * batch_size
+            total_samples += batch_size
+
+            # Accumulate predictions and ground truths for metrics
+            ground_truths.extend(labels.cpu().detach().numpy())
+            probabilities.extend(probs.cpu().detach().numpy())
+            predictions.extend(preds.cpu().detach().numpy())
+            
+            # Update progress bar with average loss so far
+            pbar.set_postfix(loss=f"{running_loss / total_samples:.4f}")
+            pbar.update(1)
+
+    # Compute aggregated metrics after epoch
+    train_loss = running_loss / total_samples
+
+    # Calculate metrics
+    y_true, y_pred = np.array(ground_truths), np.array(predictions)
+    y_proba = np.array(probabilities) if probabilities else None
+    metrics = calculate_metrics(y_true, y_pred, y_proba)
+
+    logging.info(f"Train Loss: {train_loss:.4f}")
+    logging.info(f"Train Metrics: " + ", ".join([f"{key.lower()}: {value:.4g}" for key, value in metrics.items()]))
+    logs.update({f"train_loss": train_loss, **{f"train_{key.lower()}": value for key, value in metrics.items()}})
+    return train_loss
+
+def _train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion, optimizer, epochs, device, callbacks) -> dict[str,list]:
     """
     Train and evaluate the model while displaying metrics with a progress bar.
 
@@ -121,8 +172,6 @@ def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion
         dict: Losses for each phase across all epochs.
     """
     loss_dict = {'train': [], 'val': []}
-    best_acc = 0.0
-    num_classes = len(train_loader.dataset.classes)
 
     for epoch in range(epochs):
         logging.info(f"Epoch {epoch + 1}/{epochs}")
@@ -139,62 +188,20 @@ def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion
         for callback in callbacks:
             callback.on_epoch_start(epoch, logs)
 
-        # set model to train or eval mode
-        for phase in ['train', 'val']:
-            is_train = phase == 'train'
-            model.train() if is_train else model.eval()
-            data_loader = train_loader if is_train else val_loader
+        # Training step
+        train_loss = _train(model, train_loader, criterion, optimizer, device, epoch, epochs, logs)
+        loss_dict['train'].append(train_loss)  
 
-            running_loss = 0.0
-            total_samples = 0.0
-            correct = 0.0
-            predictions, ground_truths, probabilities = [], [], []
+        # Validation step using test_inference
+        val_metrics = test_inference(model, val_loader, device, criterion=criterion, save_dir=None)
+        val_loss = val_metrics.get("loss", 0.0)
+        loss_dict['val'].append(val_loss)
 
-            with tqdm(total=len(data_loader), desc=f"{phase.capitalize()} Epoch {epoch + 1}/{epochs}") as pbar:
-                for inputs, labels in data_loader:
-                    inputs, labels = inputs.to(device), labels.to(device)
-                    
-                    # Zero gradients only during training
-                    if is_train:
-                        optimizer.zero_grad()
+        logging.info(f"Val Loss: {val_loss:.4f}")
+        logging.info("Val Metrics: " + ", ".join([f"{key.lower()}: {value:.4f}" for key, value in val_metrics.items() if key != "loss"]))
+        logs.update({"val_loss": val_loss, **{f"val_{key.lower()}": value for key, value in val_metrics.items() if key != "loss"}})
 
-                    with torch.set_grad_enabled(is_train):
-                        outputs = model(inputs)
-
-                        loss, probs, preds = compute_loss_and_predictions(outputs, labels, criterion)
-                        
-                        if is_train:
-                            loss.backward()
-                            optimizer.step()
-
-                    # Update running loss and sample count
-                    batch_size = inputs.size(0)
-                    running_loss += loss.item() * batch_size
-                    total_samples += batch_size
-
-                    # Accumulate predictions and ground truths for metrics
-                    ground_truths.extend(labels.cpu().detach().numpy())
-                    predictions.extend(preds.cpu().detach().numpy())
-                    probabilities.extend(probs.cpu().detach().numpy())
-                    
-                    # Update progress bar with average loss so far
-                    pbar.set_postfix(loss=f"{running_loss / total_samples:.4f}")
-                    pbar.update(1)
-
-            # Compute aggregated metrics after epoch
-            epoch_loss = running_loss / total_samples
-
-            # Calculate metrics
-            y_true = np.array(ground_truths)
-            y_pred = np.array(predictions)
-            y_proba = np.array(probabilities) if probabilities else None
-
-            metrics = calculate_metrics(y_true, y_pred, y_proba)
-
-            loss_dict[phase].append(epoch_loss)
-            logging.info(f"{phase.capitalize()} Loss: {epoch_loss:.4f}")
-            logging.info(f"{phase.capitalize()} Metrics: " + ", ".join([f"{key}: {value:.4g}" for key, value in metrics.items()]))
-            logs.update({f"{phase}_loss": epoch_loss, **metrics})
+        print(logs)
 
         # Trigger on_epoch_end callbacks
         for callback in callbacks:
@@ -204,7 +211,6 @@ def train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion
         if any(getattr(cb, "early_stop", False) for cb in callbacks):
             break
 
-    logging.info(f"Best validation accuracy: {best_acc:.4f}")
     return loss_dict
 
 # TODO: Work in progress (finish)
