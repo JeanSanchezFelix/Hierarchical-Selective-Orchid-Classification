@@ -26,7 +26,7 @@ def quantize_pytorch_model(model: nn.Module, quant_mode: str, save_dir: Optional
         quantized_model = convert_fx(model)
     elif quant_mode == "export":
         logging.info("Quantizing model using PT2E Export Mode.")
-        quantized_model = convert_pt2e(model, fold_quantize=False)
+        quantized_model = convert_pt2e(model, fold_quantize=True)
     else:
         raise ValueError("Invalid mode. Choose either 'fx' or 'export'.")
     

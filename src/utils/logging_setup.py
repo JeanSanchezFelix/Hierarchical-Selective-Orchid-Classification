@@ -7,7 +7,7 @@ def configure_logging(logs: bool = False, save_dir: Optional[str] = None):
     Configures logging to write to a file (if save_dir is provided) 
     and optionally to the console.
 
-    Parameters:
+    Args:
         logs (bool): Whether to log messages to the console.
         save_dir (Optional[str]): Directory where the log file will be saved.
     """

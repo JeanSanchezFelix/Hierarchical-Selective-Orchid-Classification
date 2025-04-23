@@ -12,7 +12,7 @@ def calculate_metrics(y_true, y_pred, y_proba = None) -> dict[str, float]:
     """
     Calculates classification metrics, supporting both binary and multiclass classification.
 
-    Parameters:
+    Args:
         y_true (list or ndarray): True labels.
         y_pred (list or ndarray): Predicted labels.
         y_proba (ndarray, optional): Predicted probabilities or scores for all classes 

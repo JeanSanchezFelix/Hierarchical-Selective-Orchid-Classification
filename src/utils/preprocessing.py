@@ -10,7 +10,7 @@ def log_dataset_statistics(dataset, dataset_name: str):
     """
     Logs the size and class distribution of a dataset.
 
-    Parameters:
+    Args:
         dataset: The dataset object (e.g., ImageFolder or a split subset).
         dataset_name (str): A descriptive name for the dataset (e.g., 'train', 'val', 'test').
     """
@@ -32,7 +32,7 @@ def log_all_statistics(loaders: dict[str, DataLoader]):
     """
     Logs statistics for all DataLoaders.
 
-    Parameters:
+    Args:
         loaders: A dictionary of DataLoaders (e.g., {'train': train_loader, 'val': val_loader}).
     """
     total_samples = 0
@@ -60,7 +60,7 @@ def load_data(
     (with optional data augmentation), and constructs DataLoaders. If a weighted sampler is desired,
     it is applied to the training set.
 
-    Parameters:
+    Args:
         dataset (str): Dataset used for training.
         batch_size (int): Batch size for DataLoader.
         train_split (float): Proportion of data to use for training (if splitting).

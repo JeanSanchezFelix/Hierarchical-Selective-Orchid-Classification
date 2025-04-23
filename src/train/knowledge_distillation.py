@@ -24,7 +24,7 @@ def compute_distillation_loss(teacher_logits: torch.Tensor, student_logits: torc
     is computed with 'batchmean' reduction. The loss is scaled by T^2 as recommended in 
     distillation literature.
     
-    Parameters:
+    Args:
         teacher_logits (torch.Tensor): Logits from the teacher model.
         student_logits (torch.Tensor): Logits from the student model.
         T (float): Temperature to soften the logits.
@@ -138,7 +138,7 @@ def _train_and_evaluate_kd(
     to simulate the behavior of the final quantized model. Training and validation metrics are logged 
     and stored per epoch.
     
-    Parameters:
+    Args:
         teacher (nn.Module): The pre-trained teacher model.
         student (nn.Module): The student model to be trained.
         train_loader (DataLoader): DataLoader for the training dataset.
@@ -243,7 +243,7 @@ def train_qat_kd(
          are loaded and the student model is quantized for export.
       5. If a test DataLoader is provided, the quantized student model is evaluated.
     
-    Parameters:
+    Args:
         teacher_name (str): Name of the pre-trained teacher model (e.g., 'resnet50', 'efficientnet_b0').
         student_name (str): Name of the student model to be trained with QAT.
         data_loaders (dict[str, DataLoader]): Dictionary containing DataLoaders for dataset splits 
@@ -342,6 +342,7 @@ def train_qat_kd(
     student.load_state_dict(model_data)
     logging.info(f"Best model weights loaded from: {quantized_model_path}")
 
+    student = torch.ao.quantization.move_exported_model_to_eval(student)
 
     # Quantize the student model for export.
     quantized_student = quantize_pytorch_model(student.to("cpu"), quant_mode, save_dir=os.path.join(save_dir, "quantized_state.pth"))
@@ -350,6 +351,7 @@ def train_qat_kd(
 
     # If a test set is provided, perform inference evaluation on the quantized student model.
     if "test" in data_loaders and data_loaders["test"] is not None:
+        quantized_student = torch.ao.quantization.move_exported_model_to_eval(quantized_student)
         test_inference(quantized_student, data_loaders["test"], torch.device("cpu"), save_dir=metrics_save_dir)
 
     return teacher, quantized_student

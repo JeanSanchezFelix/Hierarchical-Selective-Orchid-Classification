@@ -3,8 +3,10 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
+# import ai_edge_torch
+import tensorflow as tf
 
-def convert_pytorch_model_to_tflite(model: nn.Module, save_dir: str, example_inputs: tuple[torch.Tensor, ...]) -> None:
+def convert_pytorch_model_to_tflite(model: nn.Module, example_inputs: tuple[torch.Tensor, ...], save_dir: str,) -> None:
     """
     Converts a PyTorch model to a TensorFlow Lite (TFLite) model and exports it to the specified directory.
     
@@ -19,7 +21,6 @@ def convert_pytorch_model_to_tflite(model: nn.Module, save_dir: str, example_inp
     Returns:
         None
     """
-    import ai_edge_torch
     logging.info("Converting PyTorch model to TensorFlow Lite format.")
     # Ensure the model is in evaluation mode for export.
     # model = torch.ao.quantization.move_exported_model_to_eval(model)
@@ -37,7 +38,6 @@ def convert_tensorflow_model_to_tflite(saved_model_dir: str, tflite_model_path: 
         saved_model_dir (str): Path to the TensorFlow SavedModel directory.
         tflite_model_path (str): Path to save the converted TensorFlow Lite model.
     """
-    import tensorflow as tf
     # Load the SavedModel and create a TFLiteConverter.
     converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
     

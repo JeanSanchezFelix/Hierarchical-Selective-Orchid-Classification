@@ -27,7 +27,7 @@ def transfer_learning(
     """
     Train a model using transfer learning 
 
-    Parameters:
+    Args:
         model_name (str): Name of the pre-trained model to use (e.g., 'resnet18', 'mobilenet_v2').
         data_loaders dict[str, DataLoader]: DataLoaders containing data splits (e.g. train, val, test)
         save_dir (str): Directory to save the trained model and checkpoints.
@@ -159,7 +159,7 @@ def _train_and_evaluate(model, train_loader, val_loader, learning_rate, criterio
     """
     Train and evaluate the model while displaying metrics with a progress bar.
 
-    Parameters:
+    Args:
         model (torch.nn.Module): The model to train.
         train_loader (DataLoader): DataLoader for training data.
         val_loader (DataLoader): DataLoader for validation data.
@@ -228,7 +228,7 @@ def cross_validation(
     """
     Perform k-fold cross-validation for a given model and dataset.
 
-    Parameters:
+    Args:
         model_name (str): Name of the pre-trained model.
         dataset: The dataset to be split for cross-validation.
         k_folds (int): Number of folds for cross-validation.
@@ -284,7 +284,7 @@ def evaluate_model(model, val_loader) -> float:
     """
     Evaluate the model on the validation set.
 
-    Parameters:
+    Args:
         model: Trained model.
         val_loader: DataLoader for the validation set.
 

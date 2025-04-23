@@ -144,7 +144,7 @@ def setup_optimizer(model, optimizer_name: str, learning_rate: float):
     """
     Configure and return the optimizer for training.
 
-    Parameters:
+    Args:
         model (nn.Module): The model whose parameters need optimization.
         optimizer_name (str): Name of the optimizer (e.g., "adam", "sgd", "rmsprop", "adagrad", "adamw").
         learning_rate (float): The learning rate for the optimizer.
@@ -184,7 +184,7 @@ def tf_setup(model_name: str,
     """
     Complete setup for the model, optimizer, and loss function.
 
-    Parameters:
+    Args:
         model_name (str): Name of the pre-trained model to use.
         learning_rate (float): Learning rate for the optimizer.
         criterion (str): Name of the loss function.

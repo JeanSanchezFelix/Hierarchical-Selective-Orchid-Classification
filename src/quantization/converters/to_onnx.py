@@ -2,6 +2,7 @@ import logging
 import torch
 import onnx
 import tensorflow as tf
+from onnx_tf.backend import prepare
 from src.quantization.quantization_utils.inspect import is_quantized_model
 
 def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, onnx_file_path: str, dynamo: bool = True, opset_version: int = 18) -> None:
@@ -76,7 +77,6 @@ def export_onnx_to_savedmodel(onnx_path: str, saved_model_dir: str) -> None:
         None: This function does not return any value. It exports the model to 
               the specified location.
     """
-    from onnx_tf.backend import prepare
     # Load the ONNX model.
     onnx_model = onnx.load(onnx_path)
     

@@ -25,7 +25,7 @@ def seed_everything(seed: int = 42):
     """
     Seeds random number generators for reproducibility.
 
-    Parameters:
+    Args:
         seed (int): The seed value to use.
     """
     random.seed(seed)
@@ -41,7 +41,7 @@ def warm_up(model: nn.Module, dataloader: DataLoader, device: torch.device, num_
     """
     Runs a warm-up phase to stabilize the model and device before benchmarking.
 
-    Parameters:
+    Args:
         model (nn.Module): The model to warm up.
         dataloader (DataLoader): DataLoader supplying input data.
         device (torch.device): Device on which to run inference.
@@ -74,7 +74,7 @@ def measure_inference_performance(
     """
     Measures average inference time per sample and throughput.
 
-    Parameters:
+    Args:
         model (nn.Module): The model to evaluate.
         dataloader (DataLoader): DataLoader supplying inference data.
         device (torch.device): Device on which to run inference.
@@ -141,7 +141,7 @@ def calculate_speedup(
         - time_speedup = baseline_time / target_time
         - throughput_speedup = target_throughput / baseline_throughput
 
-    Parameters:
+    Args:
         baseline_time (float): Average inference time per sample for the baseline model.
         baseline_throughput (float): Throughput for the baseline model (samples per second).
         target_time (float): Average inference time per sample for the target model.
@@ -174,7 +174,7 @@ def measure_memory_usage(
     For CUDA devices, it resets the peak memory counter and then performs inference over a few batches.
     For CPU inference, if psutil is available, it returns the process memory usage (in MB).
 
-    Parameters:
+    Args:
         model (nn.Module): The model to evaluate.
         dataloader (DataLoader): DataLoader to supply inference data.
         device (torch.device): Device on which inference is performed.
@@ -220,7 +220,7 @@ def model_size(model: nn.Module) -> float:
     """
     Computes the model size (state_dict size) in MB.
 
-    Parameters:
+    Args:
         model (torch.nn.Module): The model to be evaluated.
 
     Returns:
@@ -326,7 +326,7 @@ def measure_power_consumption(
     For CPU devices, if pyRAPL is available, uses it to measure energy consumption.
     A warm-up phase is performed before measurement.
 
-    Parameters:
+    Args:
         model (torch.nn.Module): The model to evaluate.
         dataloader (DataLoader): DataLoader supplying inference data.
         device (torch.device): Device on which inference is performed.

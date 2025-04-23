@@ -36,7 +36,7 @@ def validate_args(args):
     """
     Validate the parsed arguments.
 
-    Parameters:
+    Args:
         args (dict): Parsed arguments.
 
     Raises:

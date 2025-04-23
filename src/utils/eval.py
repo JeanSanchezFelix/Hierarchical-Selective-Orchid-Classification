@@ -15,7 +15,7 @@ def evaluate(model_path: str, metadata_path: str, img_size: int, dataset: str, s
     """
     Perform inference on the test dataset and evaluate model performance.
 
-    Parameters:
+    Args:
         model_path (str): Path to the saved model file.
         metadata_path (str): Path to the metadata of saved model file.
         dataset (str): The name of the dataset that will be used for evaluation.
@@ -68,7 +68,7 @@ def compute_loss_and_predictions(outputs: torch.Tensor,
     For loss functions like BCE/BCELoss, CrossEntropyLoss, or NLLLoss, the appropriate transformation 
     is applied to the raw outputs to compute both the loss and predicted class labels.
 
-    Parameters:
+    Args:
         outputs (torch.Tensor): Raw model outputs (logits).
         labels (torch.Tensor): Ground truth labels.
         criterion (nn.Module): Loss function to use.
@@ -117,7 +117,7 @@ def _compute_predictions(outputs: torch.Tensor) -> tuple[torch.Tensor, torch.Ten
 
     Determines whether the task is binary or multiclass based on the shape of the outputs.
 
-    Parameters:
+    Args:
         outputs (torch.Tensor): Raw model outputs (logits).
 
     Returns:
@@ -140,7 +140,7 @@ def test_inference(model: nn.Module, data_loader: DataLoader, device, criterion=
     """
     Performs inference on a dataset, computes metrics, and optionally saves plots.
 
-    Parameters:
+    Args:
         model (nn.Module): The trained model.
         data_loader (DataLoader): DataLoader for the test dataset.
         device (torch.device): Device to perform inference on (CPU or GPU).
