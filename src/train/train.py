@@ -201,8 +201,6 @@ def _train_and_evaluate(model, train_loader, val_loader, learning_rate, criterio
         logging.info("Val Metrics: " + ", ".join([f"{key.lower()}: {value:.4f}" for key, value in val_metrics.items() if key != "loss"]))
         logs.update({"val_loss": val_loss, **{f"val_{key.lower()}": value for key, value in val_metrics.items() if key != "loss"}})
 
-        print(logs)
-
         # Trigger on_epoch_end callbacks
         for callback in callbacks:
             callback.on_epoch_end(epoch, logs)

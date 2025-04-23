@@ -1,11 +1,10 @@
 import logging
 import torch
 import onnx
-from src.Quantization.quantization_utils.conversions.litert import is_quantized_model
-from typing import Iterator
-import tensorflow as tf  # TensorFlow for TFLiteConverter
+import tensorflow as tf
+from src.quantization.quantization_utils.inspect import is_quantized_model
 
-def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, onnx_file_path: str, opset_version: int = 18) -> None:
+def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, onnx_file_path: str, dynamo: bool = True, opset_version: int = 18) -> None:
     """
     Exports a given PyTorch model to the ONNX format.
 
@@ -19,11 +18,28 @@ def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, 
         onnx_file_path (str): Path where the ONNX file will be saved.
         opset_version (int): ONNX opset version to use. Defaults to 18.
     """
+
     # Set model to evaluation mode.
     if is_quantized_model(model):
         torch.ao.quantization.allow_exported_model_train_eval(model)  # restores eval/train to call move_exported_model_* under the hood
     
     model.eval()
+
+    # Prepare the dynamic batch size arguments based on dynamo
+    if dynamo:
+        dynamic_args = {
+            "dynamic_shapes": {
+                "input": {0: torch.export.Dim("batch_size")}, 
+                "output": {0: torch.export.Dim("batch_size")}
+            }
+        }
+    else:
+        dynamic_args = {
+            "dynamic_axes": {
+                "input": {0: "batch_size"},
+                "output": {0: "batch_size"}
+            }
+        }
 
     # Export the model.
     torch.onnx.export(
@@ -35,9 +51,9 @@ def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, 
         do_constant_folding=True,       # execute constant folding for optimization
         input_names=['input'],          # the model's input names
         output_names=['output'],        # the model's output names
-        dynamic_shapes={"input":  {0: torch.export.Dim("batch_size")}, "output": {0: torch.export.Dim("batch_size")}},  # enable dynamic batch size
-        dynamo=True,
-        external_data=False
+        dynamo=dynamo,
+        external_data=False,
+        **dynamic_args                  # unpack the conditional arguments
         # fallback=True,                  # logs when TorchScript fallback occurs
         # report=True                     # generates a markdown report of the export
     )
@@ -70,23 +86,6 @@ def export_onnx_to_savedmodel(onnx_path: str, saved_model_dir: str) -> None:
     # Export the model as a SavedModel.
     tf_rep.export_graph(saved_model_dir)
     logging.info(f"Saved TensorFlow model at: {saved_model_dir}")
-
-def representative_data_gen(
-    dataloader: torch.utils.data.DataLoader
-) -> Iterator[list[tf.Tensor]]:
-    """
-    Yield batches from a DataLoader for TFLite calibration.
-
-    Args:
-        dataloader (DataLoader): PyTorch DataLoader for the calibration set.
-
-    Yields:
-        Iterator of single‑element lists containing input tensors as NumPy arrays.
-    """
-    for batch in dataloader:
-        images, _ = batch
-        # Convert to NumPy and wrap in list per TFLite API
-        yield [images.numpy()]
 
 
 # def export_savedmodel_to_tflite(

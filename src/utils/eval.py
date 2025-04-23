@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 from datasets.registry import DATASET_REGISTRY
-from src.Quantization.quantization_utils.conversions.litert import is_quantized_model
+from src.quantization.quantization_utils.inspect import is_quantized_model
 from src.utils.model_setup import setup_model
 from src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_roc_auc_curve, plot_radar_chart
 
@@ -151,9 +151,9 @@ def test_inference(model: nn.Module, data_loader: DataLoader, device, criterion=
     
     # Set model to evaluation mode.
     if is_quantized_model(model):
-        torch.ao.quantization.move_exported_model_to_eval(model)
-    else:
-        model.eval()
+        torch.ao.quantization.allow_exported_model_train_eval(model)  # restores eval/train to call move_exported_model_* under the hood
+    
+    model.eval()
 
     running_loss, total_samples = 0.0, 0
     predictions, ground_truths, probabilities = [], [], []

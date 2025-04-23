@@ -12,8 +12,9 @@ from torch.utils.data import DataLoader
 from src.utils import (load_data, process_callbacks, benchmark, compute_loss_and_predictions, calculate_metrics, 
                        plot_train_val_curve, test_inference)
 
-from src.Quantization.quantization_utils.model_setup import qat_kd_setup
-from src.Quantization.quantization_utils.conversions.litert import quantize_pytorch_model, convert_pytorch_model_to_tflite, check_quantized_modules
+from src.quantization.quantization_utils.model_setup import qat_kd_setup
+from src.quantization.core.quantize import quantize_pytorch_model
+from src.quantization.converters.to_tflite import convert_pytorch_model_to_tflite
 
 def compute_distillation_loss(teacher_logits: torch.Tensor, student_logits: torch.Tensor, T: float) -> torch.Tensor:
     """
@@ -40,21 +41,22 @@ def compute_distillation_loss(teacher_logits: torch.Tensor, student_logits: torc
     return soft_loss
 
 # TODO: Finish
-def _train_knowledge_distillation(student: nn.Module,
-    train_loader: DataLoader,
-    criterion,
-    optimizer,
-    device: torch.device,
-    epoch: int,
-    epochs: int,
-    logs: dict,
-    quant_mode: str,
-    T: float,
-    soft_target_loss_weight: float,
-    ce_loss_weight: float,
-) -> float:
+def _train_kd(student: nn.Module,
+            teacher: nn.Module,
+            train_loader: DataLoader,
+            criterion,
+            optimizer,
+            device: torch.device,
+            epoch: int,
+            epochs: int,
+            logs: dict,
+            quant_mode: str,
+            T: float,
+            soft_target_loss_weight: float,
+            ce_loss_weight: float,
+        ) -> float:
     
-    torch.ao.quantization.move_exported_model_to_train(student)
+    student = torch.ao.quantization.move_exported_model_to_train(student)
     running_loss, total_samples = 0.0, 0
     predictions, ground_truths, probabilities = [], [], []
 
@@ -109,7 +111,7 @@ def _train_knowledge_distillation(student: nn.Module,
     logs.update({f"train_loss": train_loss, **{f"train_{key.lower()}": value for key, value in metrics.items()}})
     return train_loss
 
-def train_knowledge_distillation(
+def _train_and_evaluate_kd(
     teacher: nn.Module,
     student: nn.Module,
     train_loader: DataLoader,
@@ -162,6 +164,9 @@ def train_knowledge_distillation(
     teacher.eval()
     
     for epoch in range(epochs):
+        logging.info(f"Epoch {epoch + 1}/{epochs}")
+        logging.info("-" * 10)
+
         logs = {"model": student, 
                 "batch_size": train_loader.batch_size, 
                 "learning_rate": learning_rate, 
@@ -173,90 +178,31 @@ def train_knowledge_distillation(
         for callback in callbacks:
             callback.on_epoch_start(epoch, logs)
 
-        for phase in ['train', 'val']:
-            is_train = phase == 'train'
+        # Training step
+        train_loss = _train_kd(student, 
+                               teacher, 
+                               train_loader, 
+                               criterion, 
+                               optimizer, 
+                               device, 
+                               epoch, 
+                               epochs, 
+                               logs, 
+                               quant_mode, 
+                               T, 
+                               soft_target_loss_weight, 
+                               ce_loss_weight)
+        
+        loss_dict['train'].append(train_loss)
 
-            # For training phase, we use the original student model.
-            # For validation, we create a deep copy and quantize it.
-            if is_train:
-                # current_student = student.to(device)
-                # Ensure the model is in train mode
-                torch.ao.quantization.move_exported_model_to_train(student)
-            else:
-                # Create a deep copy to avoid altering the training model
-                # current_student = copy.deepcopy(student).to(device)
-                # Quantize the copied student model for validation
-                # Pass save_dir as None to avoid saving the state dict
-                # current_student = quantize_pytorch_model(current_student, quant_mode=quant_mode, save_dir=None)
-                # Switch to evaluation mode to perform inference
-                torch.ao.quantization.move_exported_model_to_eval(student)
+        # Validation step using test_inference
+        val_metrics = test_inference(student, val_loader, device, criterion=criterion, save_dir=None)
+        val_loss = val_metrics.get("loss", 0.0)
+        loss_dict['val'].append(val_loss)
 
-            data_loader = train_loader if is_train else val_loader
-
-            running_loss = 0.0
-            total_samples  = 0.0
-            predictions, ground_truths, probabilities = [], [], []
-
-            with tqdm(total=len(data_loader), desc=f"{phase.capitalize()} Epoch {epoch + 1}/{epochs}") as pbar:
-                for inputs, labels in data_loader:
-                    inputs, labels = inputs.to(device), labels.to(device)
-                    
-                    # Zero gradients only during training
-                    if is_train:
-                        optimizer.zero_grad()
-                    
-                    # Teacher forward pass without gradient computation.
-                    with torch.no_grad():
-                        teacher = teacher.to(device)
-                        teacher_logits = teacher(inputs)
-                    
-                    # Enable gradients only in training phase
-                    with torch.set_grad_enabled(is_train):                        
-                        student = student.to(device)
-                        student_logits = student(inputs)
-
-                        # Compute soft targets loss using KL divergence.
-                        soft_loss = compute_distillation_loss(teacher_logits=teacher_logits, student_logits=student_logits, T=T)
-
-                        # Compute the true label loss and obtain predictions/probabilities
-                        label_loss, probs, preds = compute_loss_and_predictions(student_logits, labels, criterion)
-                        
-                        # Combine the losses using the specified weights.
-                        loss = soft_target_loss_weight * soft_loss + ce_loss_weight * label_loss
-
-                        # Backpropagate and update weights if in training mode.
-                        if is_train:
-                            loss.backward()
-                            optimizer.step()
-                    
-                    # Update running loss and sample count
-                    batch_size = inputs.size(0)
-                    running_loss += loss.item() * batch_size
-                    total_samples += batch_size
-
-                    # Accumulate predictions and ground truths for metrics
-                    ground_truths.extend(labels.cpu().detach().numpy())
-                    predictions.extend(preds.cpu().detach().numpy())
-                    probabilities.extend(probs.cpu().detach().numpy())
-                    
-                    # Update progress bar with average loss so far
-                    pbar.set_postfix(loss=f"{running_loss / total_samples:.4f}")
-                    pbar.update(1)
-                
-            # Compute aggregated metrics after epoch
-            epoch_loss = running_loss / total_samples
-            
-            y_true = np.array(ground_truths)
-            y_pred = np.array(predictions)
-            y_proba = np.array(probabilities) if probabilities else None
-
-            # Calculate metrics
-            metrics = calculate_metrics(y_true, y_pred, y_proba)
-
-            loss_dict[phase].append(epoch_loss)
-            logging.info(f"{phase.capitalize()} Loss: {epoch_loss:.4f}")
-            logging.info(f"{phase.capitalize()} Metrics: " + ", ".join([f"{key}: {value:.4g}" for key, value in metrics.items()]))
-            logs.update({f"{phase}_loss": epoch_loss, **metrics})
+        logging.info(f"Val Loss: {val_loss:.4f}")
+        logging.info("Val Metrics: " + ", ".join([f"{key.lower()}: {value:.4f}" for key, value in val_metrics.items() if key != "loss"]))
+        logs.update({"val_loss": val_loss, **{f"val_{key.lower()}": value for key, value in val_metrics.items() if key != "loss"}})
 
         # Trigger on_epoch_end callbacks
         for callback in callbacks:
@@ -367,7 +313,7 @@ def train_qat_kd(
     start_time = time.time()
 
     # Train the student model using knowledge distillation.
-    loss_dict = train_knowledge_distillation(
+    loss_dict = _train_and_evaluate_kd(
                             teacher=teacher, 
                             student=student, 
                             train_loader=train_loader,
@@ -404,7 +350,7 @@ def train_qat_kd(
 
     # If a test set is provided, perform inference evaluation on the quantized student model.
     if "test" in data_loaders and data_loaders["test"] is not None:
-        test_inference(quantized_student, data_loaders["test"], torch.device("cpu"), metrics_save_dir)
+        test_inference(quantized_student, data_loaders["test"], torch.device("cpu"), save_dir=metrics_save_dir)
 
     return teacher, quantized_student
 
