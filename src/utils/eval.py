@@ -182,7 +182,8 @@ def test_inference(model: nn.Module, data_loader: DataLoader, device, criterion=
     y_proba = np.array(probabilities) if probabilities else None
     metrics = calculate_metrics(y_true, y_pred, y_proba)
 
-    metrics["loss"] = running_loss / total_samples
+    if criterion:
+        metrics["loss"] = running_loss / total_samples
 
     # Generate and save plots if save_dir is provided.
     if save_dir:

@@ -1,9 +1,11 @@
 import logging
 import torch
-import src.Quantization.quantization_utils.conversions.onnx as onnx
-from onnx_tf.backend import prepare
+import onnx
+from src.Quantization.quantization_utils.conversions.litert import is_quantized_model
+from typing import Iterator
+import tensorflow as tf  # TensorFlow for TFLiteConverter
 
-def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, onnx_file_path: str, opset_version: int = 12) -> None:
+def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, onnx_file_path: str, opset_version: int = 18) -> None:
     """
     Exports a given PyTorch model to the ONNX format.
 
@@ -15,9 +17,12 @@ def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, 
         model (torch.nn.Module): The PyTorch model to export.
         example_input (torch.Tensor): An example input tensor with the appropriate shape.
         onnx_file_path (str): Path where the ONNX file will be saved.
-        opset_version (int): ONNX opset version to use. Defaults to 12.
+        opset_version (int): ONNX opset version to use. Defaults to 18.
     """
-    # Ensure the model is in evaluation mode.
+    # Set model to evaluation mode.
+    if is_quantized_model(model):
+        torch.ao.quantization.allow_exported_model_train_eval(model)  # restores eval/train to call move_exported_model_* under the hood
+    
     model.eval()
 
     # Export the model.
@@ -30,8 +35,11 @@ def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, 
         do_constant_folding=True,       # execute constant folding for optimization
         input_names=['input'],          # the model's input names
         output_names=['output'],        # the model's output names
-        dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},  # enable dynamic batch size
-        dynamo=False
+        dynamic_shapes={"input":  {0: torch.export.Dim("batch_size")}, "output": {0: torch.export.Dim("batch_size")}},  # enable dynamic batch size
+        dynamo=True,
+        external_data=False
+        # fallback=True,                  # logs when TorchScript fallback occurs
+        # report=True                     # generates a markdown report of the export
     )
     logging.info(f"Exported PyTorch model to ONNX at: {onnx_file_path}")
 
@@ -52,6 +60,7 @@ def export_onnx_to_savedmodel(onnx_path: str, saved_model_dir: str) -> None:
         None: This function does not return any value. It exports the model to 
               the specified location.
     """
+    from onnx_tf.backend import prepare
     # Load the ONNX model.
     onnx_model = onnx.load(onnx_path)
     
@@ -80,6 +89,41 @@ def representative_data_gen(
         yield [images.numpy()]
 
 
+# def export_savedmodel_to_tflite(
+#     saved_model_dir: str,
+#     tflite_model_path: str,
+#     calibration_dataloader: torch.utils.data.DataLoader,
+#     num_calibration_steps: int = 100
+# ) -> None:
+#     """
+#     Convert a TensorFlow SavedModel to a fully INT8‑quantized TFLite model.
+
+#     Args:
+#         saved_model_dir (str): Directory of the TF SavedModel.
+#         tflite_model_path (str): Path to output the .tflite file.
+#         calibration_dataloader (DataLoader): DataLoader for representative data.
+#         num_calibration_steps (int): Number of batches for calibration.
+#     """
+#     # Create converter
+#     converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
+#     # Enable default optimizations (including full‑integer quantization)
+#     converter.optimizations = [tf.lite.Optimize.DEFAULT]  
+#     # Provide representative dataset for range calibration
+#     converter.representative_dataset = lambda: (
+#         next(representative_data_gen(calibration_dataloader))
+#         for _ in range(num_calibration_steps)
+#     )  
+#     # Restrict to INT8 ops only
+#     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]  
+#     # Ensure integer I/O
+#     converter.inference_input_type = tf.int8  
+#     converter.inference_output_type = tf.int8 
+#     # Convert and save
+#     tflite_model = converter.convert()
+#     with open(tflite_model_path, "wb") as f:
+#         f.write(tflite_model)
+#     logging.info(f"Generated TFLite model at: {tflite_model_path}")
+
 def export_savedmodel_to_tflite(
     saved_model_dir: str,
     tflite_model_path: str,
@@ -87,7 +131,7 @@ def export_savedmodel_to_tflite(
     num_calibration_steps: int = 100
 ) -> None:
     """
-    Convert a TensorFlow SavedModel to a fully INT8‑quantized TFLite model.
+    Convert a TensorFlow SavedModel to a fully INT8 quantized TFLite model.
 
     Args:
         saved_model_dir (str): Directory of the TF SavedModel.
@@ -107,10 +151,10 @@ def export_savedmodel_to_tflite(
     # Restrict to INT8 ops only
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]  
     # Ensure integer I/O
-    converter.inference_input_type = tf.int8  
-    converter.inference_output_type = tf.int8 
+    converter.inference_input_type = tf.int8
+    converter.inference_output_type = tf.int8
     # Convert and save
     tflite_model = converter.convert()
     with open(tflite_model_path, "wb") as f:
         f.write(tflite_model)
-    logging.info(f"Generated TFLite model at: {tflite_model_path}")
+    print(f"Generated TFLite model at: {tflite_model_path}")
