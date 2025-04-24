@@ -9,3 +9,9 @@ pyyaml==6.0.2
 matplotlib==3.10.0
 seaborn==0.13.2
 scikit-learn==1.6.1
+pyRAPL==0.2.3.1
+psutil==6.0.0
+onnx==1.17.0
+onnxruntime==1.21.0 
+onnx-tf==1.6.0
+tensorflow==2.19.0

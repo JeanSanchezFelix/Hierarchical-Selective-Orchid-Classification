@@ -1,6 +1,6 @@
 import logging
-from src.utils import parse, load_data, evaluate
-from src.train import train_models 
+from model_compression.src.utils import parse, load_data, evaluate
+from model_compression.src.train import transfer_learning 
 import torch.nn as nn
 # Add the root directory to sys.path to access datasets
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -30,7 +30,7 @@ def main():
 
     # Step 3: Train the models
     logging.info("Starting model training...")
-    train_models(
+    transfer_learning(
         model_name=args['MODEL_NAME'],
         data_loaders=data_loaders,
         save_dir=args['SAVE_DIR'],
