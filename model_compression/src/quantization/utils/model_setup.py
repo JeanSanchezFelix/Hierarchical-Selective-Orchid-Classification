@@ -8,7 +8,6 @@ from torch.ao.quantization import QConfig, MinMaxObserver, MovingAverageMinMaxOb
 from torch.ao.quantization.quantize_fx import prepare_qat_fx
 from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e
 from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
-# from ai_edge_torch.quantize import pt2e_quantizer, quant_config
 
 from model_compression.src.utils.model_setup import setup_model, setup_criterion, setup_optimizer
 
@@ -285,7 +284,7 @@ def qat_kd_setup(
     # Obtain example inputs from the dataloader for QAT preparation.
     example_inputs = next(iter(dataloader))[0].to(device)
     # Prepare the student model for QAT using the specified quantization mode.
-    student_model = quantization_mode(student_model, quant_mode, example_inputs=(example_inputs,), config=config)
+    student_model = quantization_mode(student_model.to(device), quant_mode, example_inputs=(example_inputs,), config=config)
 
     # Load the teacher model (with fine-tuned weights) using the provided teacher model name and weights.
     teacher_model = setup_model(teacher, teacher_model_weights, num_classes)

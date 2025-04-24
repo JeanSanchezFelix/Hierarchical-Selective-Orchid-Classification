@@ -2,59 +2,6 @@ import torch
 import torch.nn as nn
 import torch.ao.ns._numeric_suite_fx as ns
 import matplotlib as plt
-from torch.ao.quantization import get_default_qconfig, QConfigMapping, QConfig, MinMaxObserver, prepare_qat, convert
-from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
-from torch.utils.data import DataLoader
-
-def calibrate_model(model: torch.nn.Module, data_loader: DataLoader, device: torch.device) -> None:
-    """
-    Runs inference on the evaluation data to calibrate the quantization parameters.
-    
-    Parameters:
-        model (nn.Module): The FX prepared model.
-        data_loader (DataLoader): Evaluation DataLoader for calibration.
-    """
-    model.eval()
-    with torch.no_grad():
-        for images, _ in data_loader:
-            # Forward pass to collect activation statistics
-            model(images.to(device))
-
-def quantize_model(model: nn.Module, example_input: torch.Tensor, eval_loader: DataLoader) -> nn.Module:
-    """
-    Performs FX Graph Mode Post-Training Static Quantization on the given model.
-    
-    Parameters:
-        model (nn.Module): The float (FP32) model to quantize.
-        example_input (torch.Tensor): An example input for tracing.
-        eval_loader (DataLoader): DataLoader used for calibration.
-    
-    Returns:
-        nn.Module: The quantized model.
-    """
-    # Specify the quantization configuration (using default config for x86 CPUs)
-    # qconfig = get_default_qconfig("x86")
-    # qconfig_mapping = QConfigMapping().set_global(qconfig)
-
-    # Use the custom qconfig in your FX quantization flow
-    # model.fuse_model()
-    custom_qconfig = get_custom_qconfig()
-    qconfig_mapping = torch.ao.quantization.QConfigMapping().set_global(custom_qconfig)
-    
-    # Prepare the model for FX graph mode quantization
-    prepared_model = prepare_fx(model, qconfig_mapping, example_input)
-    print("Prepared model FX graph:")
-    print(prepared_model.graph)
-    
-    # Run calibration to collect statistics
-    calibrate_model(prepared_model, eval_loader)
-    
-    # Convert the calibrated model to a quantized version
-    quantized_model = convert_fx(prepared_model)
-    print("Quantized model FX graph:")
-    print(quantized_model.graph)
-    
-    return quantized_model
 
 def debug_quantized_model(original_model: nn.Module, quantized_model: nn.Module) -> list[int]:
     """

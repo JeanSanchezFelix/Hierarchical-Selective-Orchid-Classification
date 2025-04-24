@@ -28,8 +28,8 @@ def train_qat_kd(
     callbacks: Optional[List[Any]] = None,
     teacher_model_weights: Optional[str] = None,
     T: float = 2,
-    soft_target_loss_weight=0.25, 
-    ce_loss_weight=0.75, 
+    soft_target_loss_weight = 0.25, 
+    ce_loss_weight = 0.75, 
     quant_mode: str = "export",
     config: str = "qnnpack",
     class_weights: bool = False,
@@ -281,11 +281,27 @@ def _train_kd(student: nn.Module,
     epoch: int,
     epochs: int,
     logs: Dict,
+    quant_mode: str,
     T: float,
     soft_target_loss_weight: float,
     ce_loss_weight: float,
 ) -> float:
-    
+    """
+    Perform training for one epoch.
+
+    Args:
+        model (nn.Module): Model to train.
+        train_loader (DataLoader): Training data loader.
+        criterion (Callable): Loss function.
+        optimizer (torch.optim.Optimizer): Optimizer instance.
+        device (torch.device): Device to train on.
+        epoch (int): Current epoch index.
+        epochs (int): Total number of epochs.
+        logs (Dict[str, Any]): Logging and callback dictionary.
+
+    Returns:
+        float: Average training loss for the epoch.
+    """
     student = torch.ao.quantization.move_exported_model_to_train(student)
     running_loss, total_samples = 0.0, 0
     predictions, ground_truths, probabilities = [], [], []

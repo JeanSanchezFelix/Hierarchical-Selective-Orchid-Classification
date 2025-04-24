@@ -2,7 +2,7 @@ import logging
 import torch
 import onnx
 import tensorflow as tf
-from model_compression.src.quantization.quantization_utils.inspect import is_quantized_model
+from model_compression.src.quantization.utils.inspect import is_quantized_model
 
 try:
     from onnx_tf.backend import prepare
