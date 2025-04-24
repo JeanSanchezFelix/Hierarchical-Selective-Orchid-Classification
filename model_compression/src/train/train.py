@@ -1,44 +1,52 @@
 import os
 import time
 import logging
-import torch
-import torch.nn as nn
+from typing import Callable, Optional, Any, Dict, List, Tuple
+
 import numpy as np
+import torch
+import torch.nn.functional as F
+import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from sklearn.model_selection import KFold
-from src.utils.metrics import plot_train_val_curve, calculate_metrics
-from src.utils.model_setup import tf_setup
-from src.utils.eval import test_inference, compute_loss_and_predictions
+
+from model_compression.src.utils.callbacks import Callback
+from model_compression.src.utils.metrics import plot_train_val_curve, calculate_metrics
+from model_compression.src.utils.model_setup import tf_setup
+from model_compression.src.utils.eval import test_inference, compute_loss_and_predictions
 
 def transfer_learning(
     model_name: str,
-    data_loaders: dict[str, DataLoader],
+    data_loaders: Dict[str, DataLoader],
     save_dir: str,
     learning_rate: float = 0.001,
     epochs: int = 5,
     criterion: str = "cross_entropy",
     optimizer: str = "adam",
-    callbacks: list = None,
-    pretrained_weights: str = None,
+    callbacks: Optional[List[Callback]] = None,
+    pretrained_weights: Optional[str] = None,
     class_weights: bool = False,
     freeze_base: bool = True
-):
+) -> nn.Module:
     """
-    Train a model using transfer learning 
+    Train a model using transfer learning.
 
     Args:
         model_name (str): Name of the pre-trained model to use (e.g., 'resnet18', 'mobilenet_v2').
-        data_loaders dict[str, DataLoader]: DataLoaders containing data splits (e.g. train, val, test)
-        save_dir (str): Directory to save the trained model and checkpoints.
-        learning_rate (float): Learning rate for the optimizer.
-        epochs (int): Number of training epochs.
-        criterion (str): Criterion to use (e.g., 'cross_entropy', 'bce').
-        optimizer (str): Optimizer to use (e.g., 'adam', 'sgd').
-        callbacks (list): List of callbacks (e.g., 'ModelCheckpoint', 'EarlyStopping')
-        pretrained_weights (str): Path to existing weights for further training. Defaults to None.
-        class_weights (bool): Whether to compute class weights for imbalanced datasets.
-        freeze_base (bool): Whether to freeze the base model layers.
+        data_loaders (Dict[str, DataLoader]): Dictionary of DataLoaders for 'train', 'val', and optionally 'test' datasets.
+        save_dir (str): Directory to save trained model weights and metrics.
+        learning_rate (float, optional): Learning rate for the optimizer. Defaults to 0.001.
+        epochs (int, optional): Number of training epochs. Defaults to 5.
+        criterion (str, optional): Loss function to use ('cross_entropy', 'bce', etc.). Defaults to "cross_entropy".
+        optimizer (str, optional): Optimizer name ('adam', 'sgd', etc.). Defaults to "adam".
+        callbacks (Optional[List[Callback]]): List of callback instances. Defaults to None.
+        pretrained_weights (Optional[str]): Path to pretrained weights for fine-tuning. Defaults to None.
+        class_weights (bool, optional): Whether to compute and use class weights. Defaults to False.
+        freeze_base (bool, optional): Whether to freeze base layers of the model. Defaults to True.
+
+    Returns:
+        nn.Module: The trained PyTorch model.
     """
     # Load dataset
     logging.info("Loading datasets...")
@@ -46,12 +54,12 @@ def transfer_learning(
     val_loader = data_loaders["val"]
     logging.info("Datasets loaded successfully.")
     
-    model, criterion, optimizer = tf_setup(model_name, 
-                                           learning_rate, 
-                                           criterion, 
-                                           optimizer, 
-                                           pretrained_weights, 
-                                           train_loader, 
+    model, criterion_fn, optimizer_obj = tf_setup(model_name=model_name, 
+                                           learning_rate=learning_rate, 
+                                           criterion=criterion, 
+                                           optimizer=optimizer, 
+                                           pretrained_weights=pretrained_weights, 
+                                           train_loader=train_loader, 
                                            class_weights=class_weights)
 
     # Freeze base layers if specified
@@ -78,42 +86,142 @@ def transfer_learning(
     os.makedirs(metrics_save_dir, exist_ok=True)
     logging.info(f"Training will save checkpoints to: {save_dir}")
 
-    for callback in callbacks:
-        callback.on_train_start(logs={})
+    # Trigger training start callbacks.
+    if callbacks is not None:
+        for callback in callbacks:
+            callback.on_train_start(logs={})
 
     # Training loop
     logging.info("Starting training...")
     start = time.time()
 
-    loss_dict = _train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion, optimizer, epochs, device, callbacks)
+    loss_dict = _train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion_fn, optimizer_obj, epochs, device, callbacks)
 
     time_elapsed = time.time() - start
     logging.info(f"Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s")
 
-    # Trigger training end callbacks
-    for callback in callbacks:
-        callback.on_train_end(logs={"model": model, "optimizer": optimizer})
+    # Trigger training end callbacks.
+    if callbacks is not None:
+        for callback in callbacks:
+            callback.on_train_end(logs={"model": model, "optimizer": optimizer_obj})
 
-    # Load the best model weights before returning
-    model_data = torch.load(best_model_path, weights_only=True)
-    model.load_state_dict(model_data)
-    logging.info(f"Best model weights loaded from: {best_model_path}")
+    # Load the best model weights
+    try:
+        model_data = torch.load(best_model_path, weights_only=True)
+        model.load_state_dict(model_data)
+        model.eval()
+        logging.info(f"Best model weights loaded from: {best_model_path}")
+    except Exception as e:
+        logging.warning(f"Could not load best model weights from {best_model_path}: {e}")
+
     plot_train_val_curve(loss_dict, save_path=os.path.join(metrics_save_dir, "loss_curve.png"))
 
-    if data_loaders["test"]:
+    if "test" in data_loaders:
         test_inference(model, data_loaders["test"], device, save_dir=metrics_save_dir)
 
     return model
 
-def _train(model: nn.Module,
+def _train_and_evaluate(
+    model: nn.Module,
     train_loader: DataLoader,
-    criterion,
-    optimizer,
+    val_loader: DataLoader,
+    learning_rate: float,
+    criterion: Callable,
+    optimizer: torch.optim.Optimizer,
+    epochs: int,
+    device: torch.device,
+    callbacks: List[Callback]
+) -> Dict[str, List[float]]:
+    """
+    Run training and evaluation for each epoch.
+
+    Args:
+        model (nn.Module): Model to train.
+        train_loader (DataLoader): Training data loader.
+        val_loader (DataLoader): Validation data loader.
+        learning_rate (float): Learning rate (for logging).
+        criterion (Callable): Loss function.
+        optimizer (torch.optim.Optimizer): Optimizer instance.
+        epochs (int): Number of training epochs.
+        device (torch.device): Device to train on.
+        callbacks (List[Callback]): List of training callbacks.
+
+    Returns:
+        Dict[str, List[float]]: Dictionary containing per-epoch training and validation losses.
+    """
+    loss_dict = {'train': [], 'val': []}
+
+    for epoch in range(epochs):
+        logging.info(f"Epoch {epoch + 1}/{epochs}")
+        logging.info("-" * 10)
+
+        logs = {"model": model, 
+                "batch_size": train_loader.batch_size, 
+                "learning_rate": learning_rate, 
+                "optimizer": optimizer,
+                "criterion": criterion,
+                "epoch": epoch}
+
+        # Trigger on_epoch_start callbacks
+        for callback in callbacks:
+            callback.on_epoch_start(epoch, logs)
+
+        # Training step
+        train_loss = _train(model=model, 
+                            train_loader=train_loader, 
+                            criterion=criterion, 
+                            optimizer=optimizer, 
+                            device=device, 
+                            epoch=epoch, 
+                            epochs=epochs, 
+                            logs=logs)
+        loss_dict['train'].append(train_loss)  
+
+        # Validation step using test_inference
+        val_metrics = test_inference(model, val_loader, device, criterion)
+        val_loss = val_metrics.get("loss", 0.0)
+        loss_dict['val'].append(val_loss)
+
+        logging.info(f"Val Loss: {val_loss:.4f}")
+        logging.info("Val Metrics: " + ", ".join([f"{key.lower()}: {value:.4f}" for key, value in val_metrics.items() if key != "loss"]))
+        logs.update({"val_loss": val_loss, **{f"val_{key.lower()}": value for key, value in val_metrics.items() if key != "loss"}})
+
+        # Trigger on_epoch_end callbacks
+        for callback in callbacks:
+            callback.on_epoch_end(epoch, logs)
+
+        # Check for early stopping
+        if any(getattr(cb, "early_stop", False) for cb in callbacks):
+            break
+
+    return loss_dict
+
+def _train(
+    model: nn.Module,
+    train_loader: DataLoader,
+    criterion: Callable,
+    optimizer: torch.optim.Optimizer,
     device: torch.device,
     epoch: int,
     epochs: int,
-    logs: dict
+    logs: Dict[str, Any]
 ) -> float:
+    """
+    Perform training for one epoch.
+
+    Args:
+        model (nn.Module): Model to train.
+        train_loader (DataLoader): Training data loader.
+        criterion (Callable): Loss function.
+        optimizer (torch.optim.Optimizer): Optimizer instance.
+        device (torch.device): Device to train on.
+        epoch (int): Current epoch index.
+        epochs (int): Total number of epochs.
+        logs (Dict[str, Any]): Logging and callback dictionary.
+
+    Returns:
+        float: Average training loss for the epoch.
+    """
     model.train()
     running_loss, total_samples = 0.0, 0
     predictions, ground_truths, probabilities = [], [], []
@@ -154,62 +262,6 @@ def _train(model: nn.Module,
     logging.info(f"Train Metrics: " + ", ".join([f"{key.lower()}: {value:.4g}" for key, value in metrics.items()]))
     logs.update({f"train_loss": train_loss, **{f"train_{key.lower()}": value for key, value in metrics.items()}})
     return train_loss
-
-def _train_and_evaluate(model, train_loader, val_loader, learning_rate, criterion, optimizer, epochs, device, callbacks) -> dict[str,list]:
-    """
-    Train and evaluate the model while displaying metrics with a progress bar.
-
-    Args:
-        model (torch.nn.Module): The model to train.
-        train_loader (DataLoader): DataLoader for training data.
-        val_loader (DataLoader): DataLoader for validation data.
-        learning_rate (float): Learning rate used for logging
-        criterion: Loss function.
-        optimizer: Optimization algorithm.
-        epochs (int): Number of epochs.
-        device (torch.device): Device to run the model on.
-    Returns:
-        dict: Losses for each phase across all epochs.
-    """
-    loss_dict = {'train': [], 'val': []}
-
-    for epoch in range(epochs):
-        logging.info(f"Epoch {epoch + 1}/{epochs}")
-        logging.info("-" * 10)
-
-        logs = {"model": model, 
-                "batch_size": train_loader.batch_size, 
-                "learning_rate": learning_rate, 
-                "optimizer": optimizer,
-                "criterion": criterion,
-                "epoch": epoch}
-
-        # Trigger on_epoch_start callbacks
-        for callback in callbacks:
-            callback.on_epoch_start(epoch, logs)
-
-        # Training step
-        train_loss = _train(model, train_loader, criterion, optimizer, device, epoch, epochs, logs)
-        loss_dict['train'].append(train_loss)  
-
-        # Validation step using test_inference
-        val_metrics = test_inference(model, val_loader, device, criterion=criterion, save_dir=None)
-        val_loss = val_metrics.get("loss", 0.0)
-        loss_dict['val'].append(val_loss)
-
-        logging.info(f"Val Loss: {val_loss:.4f}")
-        logging.info("Val Metrics: " + ", ".join([f"{key.lower()}: {value:.4f}" for key, value in val_metrics.items() if key != "loss"]))
-        logs.update({"val_loss": val_loss, **{f"val_{key.lower()}": value for key, value in val_metrics.items() if key != "loss"}})
-
-        # Trigger on_epoch_end callbacks
-        for callback in callbacks:
-            callback.on_epoch_end(epoch, logs)
-
-        # Check for early stopping
-        if any(getattr(cb, "early_stop", False) for cb in callbacks):
-            break
-
-    return loss_dict
 
 # TODO: Work in progress (finish)
 
@@ -305,6 +357,3 @@ def evaluate_model(model, val_loader) -> float:
             total += labels.size(0)
 
     return correct / total
-
-
-# if __name__ == "__main__":

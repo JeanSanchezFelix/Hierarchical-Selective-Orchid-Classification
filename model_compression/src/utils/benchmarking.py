@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader
-from src.quantization.quantization_utils.inspect import is_quantized_model
+from model_compression.src.quantization.utils.inspect import is_quantized_model
 
 try:
     import psutil

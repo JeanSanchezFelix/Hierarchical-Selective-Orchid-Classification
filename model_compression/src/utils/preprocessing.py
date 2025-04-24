@@ -4,7 +4,7 @@ from collections import Counter
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 from datasets.registry import DATASET_REGISTRY
-from src.utils.data_imbalance import get_weighted_sampler
+from model_compression.src.utils.data_imbalance import get_weighted_sampler
 
 def log_dataset_statistics(dataset, dataset_name: str):
     """

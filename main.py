@@ -1,6 +1,6 @@
 import logging
-from src.utils import parse, load_data, evaluate
-from src.train import transfer_learning 
+from model_compression.src.utils import parse, load_data, evaluate
+from model_compression.src.train import transfer_learning 
 import torch.nn as nn
 # Add the root directory to sys.path to access datasets
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))

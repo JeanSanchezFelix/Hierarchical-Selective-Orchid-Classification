@@ -2,8 +2,12 @@ import logging
 import torch
 import onnx
 import tensorflow as tf
-from onnx_tf.backend import prepare
-from src.quantization.quantization_utils.inspect import is_quantized_model
+from model_compression.src.quantization.quantization_utils.inspect import is_quantized_model
+
+try:
+    from onnx_tf.backend import prepare
+except ImportError:
+    onnx_tf.backend = None 
 
 def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, onnx_file_path: str, dynamo: bool = True, opset_version: int = 18) -> None:
     """

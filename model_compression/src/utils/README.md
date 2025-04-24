@@ -167,7 +167,7 @@ The `preprocessing.py` script handles dataset preprocessing, including data augm
 
 1. Import the `evaluate` function:
    ```python
-   from src.utils.eval import evaluate
+   from model_compression.src.utils.eval import evaluate
    ```
 
 2. Call `evaluate` with the appropriate parameters:
@@ -184,7 +184,7 @@ The `preprocessing.py` script handles dataset preprocessing, including data augm
 
 1. Import the plotting functions:
    ```python
-   from src.utils.metrics import plot_metric_bar, plot_confusion_matrix
+   from model_compression.src.utils.metrics import plot_metric_bar, plot_confusion_matrix
    ```
 
 2. Use the functions with your metrics:
@@ -197,7 +197,7 @@ The `preprocessing.py` script handles dataset preprocessing, including data augm
 
 1. Import the `training_setup` function:
    ```python
-   from src.utils.model_setup import training_setup
+   from model_compression.src.utils.model_setup import training_setup
    ```
 
 2. Configure the training components:
@@ -216,7 +216,7 @@ The `preprocessing.py` script handles dataset preprocessing, including data augm
 
 1. Import the `parse` function:
    ```python
-   from src.utils.parsing import parse
+   from model_compression.src.utils.parsing import parse
    ```
 
 2. Parse arguments and load configuration:
@@ -228,7 +228,7 @@ The `preprocessing.py` script handles dataset preprocessing, including data augm
 
 1. Import the `load_data` function:
    ```python
-   from src.utils.preprocessing import load_data
+   from model_compression.src.utils.preprocessing import load_data
    ```
 
 2. Load and preprocess data:

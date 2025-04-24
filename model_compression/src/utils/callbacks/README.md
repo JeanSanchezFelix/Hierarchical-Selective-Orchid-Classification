@@ -124,7 +124,7 @@ A list of instantiated callback objects.
 
 1. **Import Callbacks:**
    ```python
-   from src.utils.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+   from model_compression.src.utils.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
    ```
 
 2. **Use with Training Workflow:**
@@ -139,7 +139,7 @@ A list of instantiated callback objects.
 
 ### Basic Usage
 ```python
-from src.utils.callbacks import ModelCheckpoint
+from model_compression.src.utils.callbacks import ModelCheckpoint
 
 # Initialize a ModelCheckpoint callback
 checkpoint_callback = ModelCheckpoint(
@@ -158,7 +158,7 @@ for epoch in range(num_epochs):
 
 ### Using `process_callbacks`
 ```python
-from src.utils.callbacks.registry import process_callbacks
+from model_compression.src.utils.callbacks.registry import process_callbacks
 
 # Define the callbacks to use
 callback_names = ["EarlyStopping", "ModelCheckpoint"]

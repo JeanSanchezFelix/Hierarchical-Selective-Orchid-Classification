@@ -4,8 +4,8 @@ import yaml
 import json
 import argparse
 import logging
-from src.utils.callbacks import process_callbacks
-from src.utils.logging_setup import configure_logging
+from model_compression.src.utils.callbacks import process_callbacks
+from model_compression.src.utils.logging_setup import configure_logging
 
 # Function to load arguments from a config file (.csv)
 def load_args_from_file(file_path: str) -> dict[str,str]:

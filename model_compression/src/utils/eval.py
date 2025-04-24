@@ -7,9 +7,9 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 from datasets.registry import DATASET_REGISTRY
-from src.quantization.quantization_utils.inspect import is_quantized_model
-from src.utils.model_setup import setup_model
-from src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_roc_auc_curve, plot_radar_chart
+from model_compression.src.quantization.utils.inspect import is_quantized_model
+from model_compression.src.utils.model_setup import setup_model
+from model_compression.src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_roc_auc_curve, plot_radar_chart
 
 def evaluate(model_path: str, metadata_path: str, img_size: int, dataset: str, save_dir: str = None):
     """

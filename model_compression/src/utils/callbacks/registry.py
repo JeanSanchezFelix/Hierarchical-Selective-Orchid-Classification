@@ -1,4 +1,4 @@
-from src.utils.callbacks import Callback, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from model_compression.src.utils.callbacks import Callback, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
 # TODO: Eliminate registry and instantiate directly?
 

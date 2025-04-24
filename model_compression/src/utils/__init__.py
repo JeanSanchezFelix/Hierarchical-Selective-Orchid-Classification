@@ -4,4 +4,4 @@ from .parsing import *
 from .preprocessing import *
 from .benchmarking import *
 from .logging_setup import *
-from .callbacks import callbacks
+from .callbacks import *

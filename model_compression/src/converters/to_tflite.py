@@ -3,8 +3,16 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
-# import ai_edge_torch
-import tensorflow as tf
+
+try:
+    import tensorflow as tf
+except ImportError:
+    tf = None
+
+try:
+    import ai_edge_torch
+except ImportError:
+    ai_edge_torch = None 
 
 def convert_pytorch_model_to_tflite(model: nn.Module, example_inputs: tuple[torch.Tensor, ...], save_dir: str,) -> None:
     """
