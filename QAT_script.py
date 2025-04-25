@@ -68,7 +68,7 @@ def warm_up(model: nn.Module, dataloader: DataLoader, device: torch.device, num_
     """
     # Set the model to evaluation mode.
     if is_quantized_model(model):
-        torch.ao.quantization.move_exported_model_to_eval(model)
+        model = torch.ao.quantization.move_exported_model_to_eval(model)
     else:
         model.eval()
 
@@ -105,7 +105,7 @@ def measure_inference_performance(
     """
     # Set model to evaluation mode.
     if is_quantized_model(model):
-        torch.ao.quantization.move_exported_model_to_eval(model)
+        model = torch.ao.quantization.move_exported_model_to_eval(model)
     else:
         model.eval()
 

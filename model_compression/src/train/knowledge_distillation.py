@@ -14,9 +14,9 @@ from model_compression.src.utils.callbacks import Callback
 from model_compression.src.utils import compute_loss_and_predictions, calculate_metrics, plot_train_val_curve, test_inference
 
 from model_compression.src.quantization.core.quantize import quantize_pytorch_model
-from model_compression.src.quantization.utils.model_setup import qat_kd_setup
+from model_compression.src.quantization.utils.model_setup import _kd_setup
 
-def train_qat_kd(
+def train_kd(
     teacher_name: str,
     student_name: str,
     data_loaders: Dict[str, DataLoader],
@@ -30,8 +30,8 @@ def train_qat_kd(
     T: float = 2,
     soft_target_loss_weight = 0.25, 
     ce_loss_weight = 0.75, 
-    quant_mode: str = "export",
-    config: str = "qnnpack",
+    quant_mode: Optional[str] = None,
+    config: Optional[str] = None,
     class_weights: bool = False,
     device: torch.device = torch.device("cuda")
 ) -> Tuple[nn.Module, nn.Module]:
@@ -65,9 +65,9 @@ def train_qat_kd(
         T (float): Temperature for softening the logits.
         soft_target_loss_weight (float): Weight for the distillation (soft target) loss.
         ce_loss_weight (float): Weight for the cross entropy loss computed on true labels.                                              
-        quant_mode (str, optional): Quantization mode to use for preparing the student model 
+        quant_mode Optional[str]: Quantization mode to use for preparing the student model 
                                     ('eager', 'fx', or 'export'). Defaults to 'export'.
-        config (str, optional): QAT configuration identifier ('qnnpack' for default QAT config for qnnpack 
+        config Optional[str]: QAT configuration identifier ('qnnpack' for default QAT config for qnnpack 
                                 or custom). Defaults to 'qnnpack'.
         class_weights (bool, optional): Whether to compute and apply class weights for imbalanced datasets.
                                         Defaults to False.
@@ -91,7 +91,7 @@ def train_qat_kd(
     logging.info("Datasets loaded successfully.")
     
     # Set up teacher and student models, loss function, and optimizer.
-    teacher, student, criterion_fn, optimizer_obj = qat_kd_setup(teacher=teacher_name, 
+    teacher, student, criterion_fn, optimizer_obj = _kd_setup(teacher=teacher_name, 
                                                                 student=student_name,
                                                                 learning_rate=learning_rate, 
                                                                 criterion=criterion, 
@@ -302,7 +302,11 @@ def _train_kd(student: nn.Module,
     Returns:
         float: Average training loss for the epoch.
     """
-    student = torch.ao.quantization.move_exported_model_to_train(student)
+    if quant_mode:
+        student = torch.ao.quantization.allow_exported_model_train_eval(student)
+
+    student.train()
+    
     running_loss, total_samples = 0.0, 0
     predictions, ground_truths, probabilities = [], [], []
 

@@ -225,7 +225,7 @@ def quantization_mode(
     return model
 
 
-def qat_kd_setup(
+def _kd_setup(
     student: str,
     teacher: str, 
     learning_rate: float, 
@@ -233,8 +233,8 @@ def qat_kd_setup(
     optimizer: str, 
     teacher_model_weights: Optional[str], 
     dataloader: DataLoader,
-    quant_mode: str = "export",
-    config: str = None,
+    quant_mode: Optional[str] = None,
+    config: Optional[str] = None,
     class_weights: bool = False,
     device: torch.device = torch.device("cuda")
 ) -> tuple[nn.Module, nn.Module, nn.Module, torch.optim.Optimizer]:
@@ -260,10 +260,10 @@ def qat_kd_setup(
                                                default weights are used.
         dataloader (DataLoader): DataLoader used for obtaining example inputs (and for calculating 
                                    class weights if needed).
-        quant_mode (str, optional): Quantization mode to use for the student model ('eager', 'fx', or 'export').
-                                    Defaults to "export".
-        config (str, optional): QAT configuration identifier. "qnnpack" uses the default QAT QConfig for qnnpack;
-                                otherwise, a custom QConfig is used. Defaults to "qnnpack".
+        quant_mode (Optional[str]): Quantization mode to use for the student model ('eager', 'fx', or 'export').
+                                    Defaults to None.
+        config (Optional[str]): QAT configuration identifier. "qnnpack" uses the default QAT QConfig for qnnpack;
+                                otherwise, a custom QConfig is used. Defaults to None.
         class_weights (bool, optional): Whether to compute and apply class weights in the loss function.
                                         Defaults to False.
         device (torch.device, optional): Device to perform operations on. Defaults to torch.device("cuda").
@@ -281,10 +281,11 @@ def qat_kd_setup(
     # Load the student model (as a standard model) using the provided student model name.
     student_model = setup_model(student, None, num_classes)
     
-    # Obtain example inputs from the dataloader for QAT preparation.
-    example_inputs = next(iter(dataloader))[0].to(device)
-    # Prepare the student model for QAT using the specified quantization mode.
-    student_model = quantization_mode(student_model.to(device), quant_mode, example_inputs=(example_inputs,), config=config)
+    if quant_mode:
+        # Obtain example inputs from the dataloader for QAT preparation.
+        example_inputs = next(iter(dataloader))[0].to(device)
+        # Prepare the student model for QAT using the specified quantization mode.
+        student_model = quantization_mode(student_model.to(device), quant_mode, example_inputs=(example_inputs,), config=config)
 
     # Load the teacher model (with fine-tuned weights) using the provided teacher model name and weights.
     teacher_model = setup_model(teacher, teacher_model_weights, num_classes)

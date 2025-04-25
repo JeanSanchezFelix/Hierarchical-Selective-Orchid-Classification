@@ -26,7 +26,7 @@ def export_pytorch_to_onnx(model: torch.nn.Module, example_input: torch.Tensor, 
 
     # Set model to evaluation mode.
     if is_quantized_model(model):
-        torch.ao.quantization.allow_exported_model_train_eval(model)  # restores eval/train to call move_exported_model_* under the hood
+        model = torch.ao.quantization.allow_exported_model_train_eval(model)  # restores eval/train to call move_exported_model_* under the hood
     
     model.eval()
 
