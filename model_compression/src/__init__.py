@@ -1,2 +1,2 @@
 from .train import train
-from .utils import eval, metrics, parsing, preprocessing, callbacks
+from .utils import metrics, parsing, preprocessing, callbacks

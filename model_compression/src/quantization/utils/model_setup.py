@@ -240,7 +240,7 @@ def _kd_setup(
 ) -> tuple[nn.Module, nn.Module, nn.Module, torch.optim.Optimizer]:
     """
     Sets up the teacher and student models, loss function, and optimizer for a combined 
-    Knowledge Distillation (KD) and Quantization-Aware Training (QAT) pipeline.
+    Knowledge Distillation (KD) and Quantization-Aware Training (QAT) pipeline if quant_mode os provided.
 
     The function performs the following steps:
       1. Loads the student model as a standard model and then prepares it for QAT using the 

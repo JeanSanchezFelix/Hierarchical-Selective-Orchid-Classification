@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from model_compression.src.utils.callbacks import Callback
-from model_compression.src.utils import compute_loss_and_predictions, calculate_metrics, plot_train_val_curve, test_inference
+from model_compression.src.utils import calculate_metrics, plot_train_val_curve
+from model_compression.src.eval import _compute_loss_and_predictions, test_inference
 
 from model_compression.src.quantization.core.quantize import quantize_pytorch_model
 from model_compression.src.quantization.utils.model_setup import _kd_setup
@@ -45,8 +46,8 @@ def train_kd(
       3. Runs the training loop for a specified number of epochs while applying knowledge distillation 
          (combining soft targets from the teacher with the true label loss).
       4. During training, checkpoints and callbacks are handled. After training, the best model weights 
-         are loaded and the student model is quantized for export.
-      5. If a test DataLoader is provided, the quantized student model is evaluated.
+         are loaded and the student model is quantized for export if quant_mode is provided.
+      5. If a test DataLoader is provided, the student model is evaluated.
     
     Args:
         teacher_name (str): Name of the pre-trained teacher model (e.g., 'resnet50', 'efficientnet_b0').
@@ -75,13 +76,13 @@ def train_kd(
     
     Returns:
         Tuple[nn.Module, nn.Module]: A tuple containing:
-            - teacher_model: The loaded teacher model.
-            - quantized_student: The quantized student model after training.
+            - teacher: The loaded teacher model.
+            - student: The student model after training.
     
     Notes:
         - The student model is prepared for QAT using example inputs from the training DataLoader.
         - After training, the best model weights are loaded from a checkpoint, and the student model is quantized 
-          (using quantize_pytorch_model) for export.
+          (using quantize_pytorch_model) for export if quant_mode is provided.
         - Training metrics (loss curves and evaluation metrics) are saved to the specified directory.
     """
     # Load dataset
@@ -105,7 +106,11 @@ def train_kd(
     logging.info("Model setup complete.")
 
     # Set up checkpoint and metrics directories.
-    quantized_model_path = os.path.join(save_dir, f"{student_name}_qat_kd.pth")
+    if quant_mode:
+        model_path = os.path.join(save_dir, f"{student_name}_qat_kd.pth")
+    else:
+        model_path = os.path.join(save_dir, f"{student_name}_kd.pth")
+
     metrics_save_dir = os.path.join(save_dir, "metrics")
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(metrics_save_dir, exist_ok=True)
@@ -147,25 +152,24 @@ def train_kd(
 
     # Load the best student model weights from checkpoint.
     try:
-        model_data = torch.load(quantized_model_path, weights_only=True)
+        model_data = torch.load(model_path, weights_only=True)
         student.load_state_dict(model_data)
-        logging.info(f"Best model weights loaded from: {quantized_model_path}")
+        logging.info(f"Best model weights loaded from: {model_path}")
     except Exception as e:
-        logging.warning(f"Could not load best model weights from {quantized_model_path}: {e}")
+        logging.warning(f"Could not load best model weights from {model_path}: {e}")
 
-    student = torch.ao.quantization.move_exported_model_to_eval(student)
+    if quant_mode:
+        # Quantize the student model for export.
+        student = quantize_pytorch_model(student.to("cpu"), quant_mode, save_dir=os.path.join(save_dir, "quantized_state.pth"))
 
-    # Quantize the student model for export.
-    quantized_student = quantize_pytorch_model(student.to("cpu"), quant_mode, save_dir=os.path.join(save_dir, "quantized_state.pth"))
     # Plot training and validation loss curves.
     plot_train_val_curve(loss_dict, save_path=os.path.join(metrics_save_dir, "loss_curve.png"))
 
     # If a test set is provided, perform inference evaluation on the quantized student model.
     if "test" in data_loaders:
-        quantized_student = torch.ao.quantization.move_exported_model_to_eval(quantized_student)
-        test_inference(quantized_student, data_loaders["test"], torch.device("cpu"), save_dir=metrics_save_dir)
+        test_inference(student, data_loaders["test"], device=device, save_dir=metrics_save_dir)
 
-    return teacher, quantized_student
+    return teacher, student
 
 
 def _train_and_evaluate_kd(
@@ -326,7 +330,7 @@ def _train_kd(student: nn.Module,
             soft_loss = compute_distillation_loss(teacher_logits=teacher_logits, student_logits=student_logits, T=T)
 
             # Compute the true label loss and obtain predictions/probabilities
-            label_loss, probs, preds = compute_loss_and_predictions(student_logits, labels, criterion)
+            label_loss, probs, preds = _compute_loss_and_predictions(student_logits, labels, criterion)
             
             # Combine the losses using the specified weights.
             loss = soft_target_loss_weight * soft_loss + ce_loss_weight * label_loss

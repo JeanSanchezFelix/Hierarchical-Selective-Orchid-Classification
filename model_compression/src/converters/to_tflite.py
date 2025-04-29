@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
+from typing import Optional, Generator, List
 
 try:
     import tensorflow as tf
@@ -66,3 +67,50 @@ def convert_tensorflow_model_to_tflite(saved_model_dir: str, tflite_model_path: 
         logging.info(f"Model converted and saved to {tflite_model_path}")
     except Exception as e:
         logging.info(f"Error converting the model: {e}")
+
+def convert_to_static_quant_tflite(
+    saved_model_dir: str,
+    output_tflite_path: str,
+    representative_dataset: Generator[List[np.ndarray], None, None],
+    supported_ops: Optional[List[tf.lite.OpsSet]] = None,
+    inference_input_type: tf.dtypes.DType = tf.uint8,
+    inference_output_type: tf.dtypes.DType = tf.uint8,
+) -> None:
+    """
+    Convert a SavedModel to a fully static-quantized TFLite model.
+
+    Args:
+        saved_model_dir (str): Path to the TensorFlow SavedModel directory.
+        output_tflite_path (str): File path to write the quantized TFLite model.
+        representative_dataset (Generator): Generator yielding representative samples.
+        supported_ops (List[tf.lite.OpsSet], optional): Supported ops sets. Defaults to TFLITE_BUILTINS_INT8.
+        inference_input_type (tf.dtypes.DType): Data type for input tensor. Defaults to tf.uint8.
+        inference_output_type (tf.dtypes.DType): Data type for output tensor. Defaults to tf.uint8.
+
+    Raises:
+        ValueError: If conversion fails or parameters are invalid.
+    """
+    # Create the TFLiteConverter from the SavedModel
+    converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
+    # Enable default optimizations (for quantization)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    # Set supported operations, defaulting to full int8 if none provided
+    converter.target_spec.supported_ops = (
+        supported_ops or [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+    )
+    # Force input and output tensors to desired dtypes
+    converter.inference_input_type = inference_input_type
+    converter.inference_output_type = inference_output_type
+    # Assign representative dataset for calibration
+    converter.representative_dataset = representative_dataset
+
+    try:
+        # Perform the conversion to a TFLite FlatBuffer
+        quantized_model = converter.convert()
+    except Exception as e:
+        # Raise on failure to convert
+        raise ValueError(f"TFLite conversion failed: {e}")
+
+    # Write the quantized model to disk
+    with open(output_tflite_path, 'wb') as f:
+        f.write(quantized_model)
