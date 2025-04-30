@@ -1,25 +1,43 @@
+import os
+from typing import Any, Dict, List, Optional, Union
+
+import numpy as np
+import torch
+from sklearn.metrics import (
+    accuracy_score,
+    recall_score,
+    precision_score,
+    f1_score,
+    roc_auc_score,
+    confusion_matrix,
+    roc_curve,
+    auc,
+    matthews_corrcoef,
+    log_loss
+)
+from sklearn.calibration import calibration_curve
+from sklearn.preprocessing import label_binarize
 import matplotlib.pyplot as plt
 import seaborn as sns
-import numpy as np
-from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, roc_auc_score, confusion_matrix, roc_curve, auc
-from sklearn.preprocessing import label_binarize
-from typing import Optional, Union
 
 # Use a colorblind-friendly palette
 sns.set_palette("colorblind")
 
-def calculate_metrics(y_true, y_pred, y_proba = None) -> dict[str, float]:
+def calculate_metrics(
+    y_true: Union[List[int], np.ndarray],
+    y_pred: Union[List[int], np.ndarray],
+    y_proba: Optional[np.ndarray] = None
+) -> Dict[str, float]:
     """
-    Calculates classification metrics, supporting both binary and multiclass classification.
+    Compute classification performance metrics for binary or multiclass tasks.
 
     Args:
-        y_true (list or ndarray): True labels.
-        y_pred (list or ndarray): Predicted labels.
-        y_proba (ndarray, optional): Predicted probabilities or scores for all classes 
-                                     (required for AUC-Score computation).
+        y_true: Ground-truth class labels.
+        y_pred: Predicted class labels.
+        y_proba: Optional array of predicted probabilities or scores.
 
     Returns:
-        dict[str, float]: A dictionary containing the computed metrics.
+        metrics: A dict mapping metric names to their values.
     """
     # Determine whether the task is binary or multiclass.
     num_classes = len(set(y_true))
@@ -30,6 +48,7 @@ def calculate_metrics(y_true, y_pred, y_proba = None) -> dict[str, float]:
         "Recall": recall_score(y_true, y_pred, average=average),
         "Precision": precision_score(y_true, y_pred, average=average),
         "F1-Score": f1_score(y_true, y_pred, average=average),
+        "MCC": matthews_corrcoef(y_true, y_pred)
     }
 
     if y_proba is not None:
@@ -42,21 +61,26 @@ def calculate_metrics(y_true, y_pred, y_proba = None) -> dict[str, float]:
 
     return metrics
 
-def plot_metric_bar(metrics: dict, title: str = "Performance Metrics", save_path: str = None):
+def plot_metric_bar(
+    metrics: Dict[str, float],
+    title: str = 'Metrics',
+    save_path: Optional[str] = None
+) -> None:
     """
-    Plots a bar chart for given metrics.
-    
+    Plot a bar chart of scalar metric values.
+
     Args:
-        metrics (dict): Dictionary of metric names (keys) and their values.
-        title (str): Title of the plot.
-        save_path (str): Optional path to save the plot.
+        metrics: Dict of metric names to scalar values.
+        title: Plot title.
+        save_path: Path to save the figure.
+
+    Raises:
+        ValueError: If no valid metrics to plot.
     """
     # Filter out non-scalar metrics (e.g., confusion matrix)
-    metrics = {k: v for k, v in metrics.items() if np.isscalar(v)}
-    
-    # If no valid metrics remain, raise an error
-    if not metrics:
-        raise ValueError("No valid scalar metrics to plot.")
+    valid_metrics = {k: v for k, v in metrics.items() if np.isscalar(v)}
+    if not valid_metrics:
+        raise ValueError('No scalar metrics to plot.')
 
     # Extract keys and values for plotting
     metric_names = list(metrics.keys())
@@ -86,33 +110,34 @@ def plot_metric_bar(metrics: dict, title: str = "Performance Metrics", save_path
 
     # Save or show plot
     if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, bbox_inches='tight')
     else:
         plt.show()
 
 def plot_confusion_matrix(
-    y_true: Union[list, np.ndarray], 
-    y_pred: Union[list, np.ndarray], 
-    labels: Optional[list[str]] = None, 
-    title: str = "Confusion Matrix", 
+    y_true: Union[List[int], np.ndarray],
+    y_pred: Union[List[int], np.ndarray],
+    labels: Optional[List[str]] = None,
+    title: str = 'Confusion Matrix',
     save_path: Optional[str] = None
 ) -> None:
     """
-    Plots a confusion matrix heatmap with improved label readability.
-    
+    Plot a normalized confusion matrix heatmap.
+
     Args:
-        y_true (list or ndarray): True labels for the classification task.
-        y_pred(list or ndarray): Predicted labels for the classification task.
-        labels (list): Optional list of class labels. If None, unique labels will be extracted.
-        title (str): Title of the confusion matrix plot.
-        save_path (str): Optional file path to save the plot.
+        y_true: True class labels.
+        y_pred: Predicted class labels.
+        labels: Optional list of label names in order.
+        title: Plot title.
+        save_path: Path to save the figure.
     """
     # Compute confusion matrix with true normalization
     cm = confusion_matrix(y_true, y_pred, normalize="true")
     
     # If labels not provided, extract unique labels
     if labels is None:
-        labels = np.unique(np.concatenate([y_true, y_pred])).tolist()
+        labels = [str(l) for l in np.unique(np.concatenate([y_true, y_pred]))]
     
     # Create figure with increased width to accommodate labels
     plt.figure(figsize=(10, 8))
@@ -161,24 +186,28 @@ def plot_confusion_matrix(
         plt.show()
 
 
-def plot_train_val_curve(metrics: dict, metric_name: str = "Loss", 
-                         title: str = "Training vs Validation", save_path: str = None):
+def plot_train_val_curve(
+    history: Dict[str, List[float]],
+    metric_name: str = 'loss',
+    title: str = 'Training vs Validation',
+    save_path: Optional[str] = None
+) -> None:
     """
-    Plots training and validation metrics over epochs.
-    
+    Plot training and validation metric curves over epochs.
+
     Args:
-        metrics (dict): Dictionary of training and validation metric values per epoch.
-        metric_name (str): Name of the metric being plotted.
-        title (str): Title of the plot.
-        save_path (str): Optional path to save the plot.
+        history: Dict with keys 'train' and 'val' lists of values.
+        metric_name: Label for the Y-axis.
+        title: Plot title.
+        save_path: Path to save the figure.
     """
     
     plt.figure(figsize=(10, 6))
-    epochs = range(1, len(metrics['train']) + 1)
+    epochs = range(1, len(history['train']) + 1)
 
     # Line plot for training and validation
-    plt.plot(epochs, metrics['train'], label=f"Training {metric_name}", color='blue')
-    plt.plot(epochs, metrics['val'], label=f"Validation {metric_name}", color='orange')
+    plt.plot(epochs, history['train'], label=f"Training {metric_name}", color='blue')
+    plt.plot(epochs, history['val'], label=f"Validation {metric_name}", color='orange')
     plt.xlabel("Epochs")
     plt.ylabel(metric_name)
     plt.title(title)
@@ -190,18 +219,21 @@ def plot_train_val_curve(metrics: dict, metric_name: str = "Loss",
     else:
         plt.show()
 
-def plot_roc_auc_curve(y_true, y_proba, title="ROC-AUC Curve", save_path=None):
+def plot_roc_auc_curve(
+    y_true: Union[List[int], np.ndarray],
+    y_proba: np.ndarray,
+    title: str = 'ROC AUC Curve',
+    save_path: Optional[str] = None
+) -> None:
     """
-    Plots the ROC-AUC curve for binary or multiclass classification.
+    Plot ROC curve for binary or multiclass classification.
 
     Args:
-        y_true (array-like): True labels.
-        y_proba (array-like): Predicted probabilities for each class.
-        title (str): Title of the plot.
-        save_path (str, optional): Path to save the plot.
-
+        y_true: True class labels.
+        y_proba: Predicted probabilities array of shape (n_samples, n_classes).
+        title: Plot title.
+        save_path: Path to save the figure.
     """
-
     # Determine if the problem is binary or multiclass
     num_classes = len(set(y_true))
 
@@ -236,17 +268,94 @@ def plot_roc_auc_curve(y_true, y_proba, title="ROC-AUC Curve", save_path=None):
     else:
         plt.show()
 
-def plot_radar_chart(metrics, title="Radar Chart for Metrics", save_path=None):
+def plot_calibration_curve(
+    y_true: Union[List[int], np.ndarray],
+    y_proba: np.ndarray,
+    n_bins: int = 10,
+    title: str = "Calibration Curve",
+    save_path: Optional[str] = None):
+    """
+    Plots the calibration (reliability) curve.
+
+    Args:
+        y_true: Ground truth binary labels.
+        y_proba: Predicted probabilities (assumes binary classification).
+        n_bins: Number of bins to divide probability range [0, 1].
+        title: Title of the plot.
+        save_path: Optional path to save the plot.
+    """
+    num_classes = y_proba.shape[1]
+
+    plt.figure(figsize=(8, 6))
+
+    if num_classes == 2:
+        # Binary classification (assume positive class is class 1)
+        prob_true, prob_pred = calibration_curve(y_true, y_proba[:, 1], n_bins=n_bins)
+        plt.plot(prob_pred, prob_true, marker='o', label='Class 1')
+    else:
+        # Multiclass: use one-vs-rest calibration for each class
+        y_true_bin = label_binarize(y_true, classes=np.arange(num_classes))
+        for class_idx in range(num_classes):
+            prob_true, prob_pred = calibration_curve(y_true_bin[:, class_idx], y_proba[:, class_idx], n_bins=n_bins)
+            plt.plot(prob_pred, prob_true, marker='o', label=f"Class {class_idx}")
+
+    # Plot reference line
+    plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label='Perfect Calibration')
+
+    plt.xlabel("Mean Predicted Probability")
+    plt.ylabel("Fraction of Positives")
+    plt.title(title)
+    plt.legend(loc="best")
+    plt.grid(True)
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    else:
+        plt.show()
+        
+def plot_log_loss(
+    history: Dict[str, List[float]],
+    title: str ="Log Loss Over Epochs",
+    save_path: Optional[str] =None
+) -> None:
+    """
+    Plots training and validation log loss over epochs.
+
+    Args:
+        history: A dictionary with keys 'train' and 'val', each containing a list of log loss values.
+        title: Title of the plot.
+        save_path: Optional path to save the plot.
+    """
+    plt.figure(figsize=(10, 6))
+    epochs = range(1, len(history['train']) + 1)
+    plt.plot(epochs, history['train'], label='Training Log Loss', color='blue')
+    plt.plot(epochs, history['val'], label='Validation Log Loss', color='orange')
+    plt.xlabel("Epochs")
+    plt.ylabel("Log Loss")
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    else:
+        plt.show()
+
+def plot_radar_chart(
+    history: Dict[str, List[float]],
+    title: str ="Radar Chart for Metrics", 
+    save_path: str =None
+) -> None:
     """
     Generates a radar plot based on metrics.
 
     Args:
-        metrics (dict): Dictionary of metric names and their scalar values (excluding Confusion Matrix).
-        title (str): Title of the plot.
-        save_path (str): Optional path to save the plot.
+        metrics: Dictionary of metric names and their scalar values (excluding Confusion Matrix).
+        title: Title of the plot.
+        save_path: Optional path to save the plot.
     """
     # Filter out non-scalar metrics (e.g., confusion matrix)
-    metrics = {k: v for k, v in metrics.items() if np.isscalar(v)}
+    metrics = {k: v for k, v in history.items() if np.isscalar(v)}
     
     # If no valid metrics remain, raise an error
     if not metrics:

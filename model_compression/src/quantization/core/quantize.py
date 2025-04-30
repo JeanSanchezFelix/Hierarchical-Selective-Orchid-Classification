@@ -2,17 +2,17 @@ import os
 import torch
 import logging
 import torch.nn as nn
-import ai_edge_torch
+# import ai_edge_torch
 import tensorflow as tf
 from typing import Optional
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e, convert_pt2e
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_fx import convert_fx
 
-from ai_edge_torch.quantize.pt2e_quantizer import get_symmetric_quantization_config
-from ai_edge_torch.quantize.pt2e_quantizer import PT2EQuantizer
-from ai_edge_torch.quantize.quant_config import QuantConfig
-from ai_edge_torch.generative.quantize.quant_recipes import full_int8_dynamic_recipe, full_int8_weight_only_recipe, full_fp16_recipe
+# from ai_edge_torch.quantize.pt2e_quantizer import get_symmetric_quantization_config
+# from ai_edge_torch.quantize.pt2e_quantizer import PT2EQuantizer
+# from ai_edge_torch.quantize.quant_config import QuantConfig
+# from ai_edge_torch.generative.quantize.quant_recipes import full_int8_dynamic_recipe, full_int8_weight_only_recipe, full_fp16_recipe
 
 from model_compression.src.quantization.utils.calibration import representative_data_gen
 

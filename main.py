@@ -20,7 +20,7 @@ def main():
     # Step 2: Load and preprocess the dataset
     logging.info("Loading and preprocessing data...")
     data_loaders = load_data(
-        dataset=args['DATASET'],
+        dataset_name=args['DATASET'],
         batch_size=args['BATCH_SIZE'],
         train_split=args['TRAIN_SPLIT'],  
         test_split=args['TEST_SPLIT'],
@@ -37,10 +37,10 @@ def main():
         save_dir=args['SAVE_DIR'],
         learning_rate=args['LEARNING_RATE'],
         num_epochs=args['EPOCHS'],
-        loss_fn_name=args['CRITERION'],
+        criterion_name=args['CRITERION'],
         optimizer_name=args['OPTIMIZER'],
         callbacks=args['CALLBACKS'],
-        pretrained_weights=args['PRETRAINED_WEIGHTS'],
+        pretrained_weights_path=args['PRETRAINED_WEIGHTS'],
         use_class_weights=args['CLASS_WEIGHTS']
     )
 

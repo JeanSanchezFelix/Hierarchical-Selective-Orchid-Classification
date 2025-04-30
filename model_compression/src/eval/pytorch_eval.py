@@ -9,7 +9,7 @@ from tqdm import tqdm
 from datasets.registry import DATASET_REGISTRY
 
 from model_compression.src.quantization.utils.inspect import is_quantized_model
-from model_compression.src.utils.model_setup import setup_model
+from model_compression.src.utils.model_setup import _setup_model
 from model_compression.src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_roc_auc_curve, plot_radar_chart
 from model_compression.src.eval.predictions import _compute_predictions
 

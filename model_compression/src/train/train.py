@@ -24,7 +24,7 @@ def transfer_learning(
     criterion_name: str = "cross_entropy",
     optimizer_name: str = "adam",
     callbacks: Optional[List[Callback]] = None,
-    pretrained_weights: Optional[str] = None,
+    pretrained_weights_path: Optional[str] = None,
     use_class_weights: bool = False,
     freeze_base_layers: bool = True,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -41,7 +41,7 @@ def transfer_learning(
         criterion_name: Loss function identifier ('cross_entropy', 'bce', etc.).
         optimizer_name: Optimizer identifier ('adam', 'sgd', etc.).
         callbacks: List of Callback instances to trigger during training.
-        pretrained_weights: Path to pretrained weights file for fine-tuning.
+        pretrained_weights_path: Path to pretrained weights file for fine-tuning.
         use_class_weights: Whether to compute and apply class weights.
         freeze_base_layers: Whether to freeze all layers except classifier.
         device: Computation device.
@@ -69,12 +69,12 @@ def transfer_learning(
     try:
         model, criterion, optimizer = tf_setup(
             model_name=model_name,
-            learning_rate=learning_rate,
+            pretrained_weights_path=pretrained_weights_path,
+            data_loader=train_loader,
             criterion_name=criterion_name,
             optimizer_name=optimizer_name,
-            pretrained_weights=pretrained_weights,
-            data_loader=train_loader,
-            class_weights=use_class_weights,
+            learning_rate=learning_rate,
+            use_class_weights=use_class_weights,
         )
     except Exception as error:
         logging.error(f"Model setup failed: {error}")
@@ -114,8 +114,8 @@ def transfer_learning(
         criterion=criterion,
         optimizer=optimizer,
         num_epochs=num_epochs,
-        device=device,
-        callbacks=callbacks or []
+        callbacks=callbacks or [],
+        device=device
     )
     elapsed = time.time() - start_time
     logging.info(f"Training completed in {elapsed // 60:.0f}m {elapsed % 60:.0f}s")
@@ -187,8 +187,7 @@ def _train_and_evaluate(
                 "batch_size": train_loader.batch_size, 
                 "learning_rate": learning_rate, 
                 "optimizer": optimizer,
-                "criterion": criterion,
-                "epoch": epoch}
+                "criterion": criterion}
 
         # Start epoch callbacks
         for callback in callbacks:

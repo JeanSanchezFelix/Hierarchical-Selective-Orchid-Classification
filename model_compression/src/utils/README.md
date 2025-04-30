@@ -1,249 +1,138 @@
 # Utils Module
 
-The `utils` module contains essential utilities that support various aspects of the machine learning workflow, including evaluation, metric calculations, and model setup. These tools are designed to streamline the development process by providing reusable and modular components.
+The `utils` module provides foundational functionality supporting data loading, model setup, training orchestration, logging, metrics visualization, benchmarking, and callback management for the `model_compression` project.
 
 ---
 
 ## Folder Structure
-```
+```plaintext
 utils/
-├── callbacks/
 ├── __init__.py
-├── eval.py
-├── metrics.py
-├── model_setup.py
-├── parsing.py
-├── preprocessing.py
+├── callbacks/          # Callback classes and registry
+├── data_imbalance.py   # Compute class weights and samplers
+├── logging_setup.py    # Configure Python logging
+├── metrics.py          # Compute and plot evaluation metrics
+├── model_setup.py      # Instantiate models, loss, and optimizers
+├── parsing.py          # CLI and config file argument parsing
+├── preprocessing.py    # Dataset transforms and DataLoader utilities
+└── benchmarking.py     # Measure performance, memory, power, and latency
 ```
 
-## Contents
+---
 
-- [Overview of Utils](#overview-of-utils)
-- [Available Scripts](#available-scripts)
-  - [eval.py](#evalpy)
-  - [metrics.py](#metricspy)
-  - [model_setup.py](#model_setuppy)
-  - [parsing.py](#parsingpy)
-  - [preprocessing.py](#preprocessingpy)
-- [How to Use](#how-to-use)
-- [Examples](#examples)
+## Modules Overview
+
+### `model_setup.py`
+- **Functions:**
+  - `setup_model` — Initialize torchvision model with custom head and optional weights.
+  - `setup_criterion` — Create loss function (with optional class weights).
+  - `setup_optimizer` — Instantiate optimizer (Adam, SGD, etc.).
+  - `tf_setup` — Full setup: model, criterion, optimizer.
+
+### `preprocessing.py`
+- **Functions:**
+  - `load_data` — Load dataset by name, apply transforms, split/folder logic, and return `DataLoader`s.
+  - `_log_dataset_statistics` / `_log_all_statistics` — Log sample counts and class distributions.
+
+### `data_imbalance.py`
+- **Functions:**
+  - `calculate_model_weights` — Compute per-class weights for imbalanced datasets.
+  - `get_weighted_sampler` — Create `WeightedRandomSampler` to oversample minority classes.
+
+### `logging_setup.py`
+- **Function:**
+  - `configure_logging` — Set up file and/or console logging with standardized format.
+
+### `parsing.py`
+- **Functions:**
+  - `parse` — Parse CLI args and optional config files (CSV/JSON/YAML), validate, and return configuration dict.
+  - `_load_args_from_file` — Load and merge arguments from external file.
+  - `_validate_args` — Ensure numeric and path constraints.
+
+### `metrics.py`
+- **Functions:**
+  - `calculate_metrics` — Accuracy, precision, recall, F1, AUC.
+  - Plotting utilities: `plot_metric_bar`, `plot_confusion_matrix`, `plot_train_val_curve`, `plot_roc_auc_curve`, `plot_calibration_curve`, `plot_log_loss`.
+
+### `benchmarking.py`
+- **Functions:**
+  - `_seed_everything` — Reproducible seeds.
+  - `_warm_up` — Untimed inference.
+  - `measure_inference_performance` — Latency and throughput.
+  - `calculate_speedup` — Compare two models.
+  - Memory and power profiling: `measure_memory_usage`, `measure_idle_power_consumption`, `measure_power_consumption`.
+  - `model_size_mb` — Disk footprint.
+  - `measure_latency_percentiles` — P50/P95/P99.
+  - `measure_throughput_per_watt` — Energy efficiency.
+  - `benchmark` — Comprehensive comparison table.
+
+### `callbacks/`
+- **Subpackage** exporting:
+  - `Callback`, `ModelCheckpoint`, `EarlyStopping`, `ReduceLROnPlateau`, `LRScheduler`
+  - `process_callbacks`, `CALLBACK_REGISTRY`
 
 ---
 
-## Overview of Utils
+## Usage Examples
 
-The `utils` module provides foundational tools for tasks such as:
-- Performing evaluation on test datasets.
-- Computing and visualizing performance metrics.
-- Configuring models, loss functions, and optimizers.
-- Parsing arguments and loading configuration files.
-- Preprocessing datasets for training and evaluation.
+### Data Loading and Preprocessing
+```python
+from model_compression.src.utils import load_data
+loaders = load_data(
+    dataset_name='MonkeyPox',
+    batch_size=32,
+    use_augmentation=True,
+    use_sampler=True
+)
+train_loader = loaders['train']
+```
 
----
+### Model Setup
+```python
+from model_compression.src.utils import tf_setup
+model, loss_fn, optimizer = tf_setup(
+    model_name='resnet18',
+    pretrained_weights_path=None,
+    dataloader=train_loader,
+    criterion_name='cross_entropy',
+    optimizer_name='adam',
+    learning_rate=1e-3
+)
+```
 
-## Available Scripts
+### Logging
+```python
+from model_compression.src.utils import configure_logging
+configure_logging(enable_console=True, log_dir='./logs')
+```
 
-### eval.py
+### Argument Parsing
+```python
+from model_compression.src.utils import parse
+config = parse()
+# config['CALLBACKS'] contains instantiated callbacks
+```
 
-The `eval.py` script handles the evaluation of trained models on a test dataset. It supports tasks such as loading pre-trained models, running inference, and generating evaluation metrics and visualizations.
+### Metrics Visualization
+```python
+from model_compression.src.utils.metrics import plot_calibration_curve, plot_log_loss
+plot_calibration_curve(y_true, y_proba, save_path='calib.png')
+plot_log_loss({'train': train_losses, 'val': val_losses}, save_path='logloss.png')
+```
 
-#### Functions:
+### Benchmarking
+```python
+from model_compression.src.utils.benchmarking import benchmark
+benchmark(model_a, model_b, val_loader, device)
+```
 
-- **`evaluate(model_path: str, img_size: int, dataset: str, save_dir: str = None)`**:
-  - Performs inference and evaluates model performance.
-  - Parameters:
-    - `model_path`: Path to the saved model file.
-    - `img_size`: Image size for resizing inputs.
-    - `dataset`: Name of the dataset to evaluate.
-    - `save_dir`: Directory to save evaluation plots (optional).
-
-- **`compute_loss_and_predictions(outputs, labels, criterion=None)`**:
-  - Computes loss (if criterion is provided) and generates predictions.
-  - Parameters:
-    - `outputs`: Raw model outputs (logits).
-    - `labels`: Ground truth labels.
-    - `criterion`: Loss function. If None, loss is not computed.
-
-- **`test_inference(model: nn.Module, test_loader: DataLoader, device: torch.device, save_dir: str)`**:
-  - Runs inference on the test dataset and computes metrics.
-  - Parameters:
-    - `model`: The trained PyTorch model.
-    - `test_loader`: DataLoader for the test dataset.
-    - `device`: Device (CPU/GPU) for inference.
-    - `save_dir`: Directory to save generated plots (optional).
-
----
-
-### metrics.py
-
-The `metrics.py` script provides utilities for calculating performance metrics and visualizing them using various plots.
-
-#### Functions:
-
-- **`calculate_metrics(y_true, y_pred, y_proba=None) -> dict[str, float]`**:
-  - Calculates metrics like accuracy, recall, precision, F1-score, and AUC.
-  - Supports both binary and multiclass classification.
-
-- **`plot_metric_bar(metrics: dict, title: str = "Performance Metrics", save_path: str = None)`**:
-  - Generates a bar chart for the given metrics.
-
-- **`plot_confusion_matrix(y_true, y_pred, labels=None, title: str = "Confusion Matrix", save_path: str = None)`**:
-  - Plots a confusion matrix as a heatmap.
-
-- **`plot_train_val_curve(metrics: dict, metric_name: str = "Loss", title: str = "Training vs Validation", save_path: str = None)`**:
-  - Plots training and validation metrics over epochs.
-
-- **`plot_radar_chart(metrics, title="Radar Chart for Metrics", save_path=None)`**:
-  - Creates a radar chart to visualize multiple metrics.
+### Callbacks
+```python
+from model_compression.src.utils.callbacks import process_callbacks
+callbacks = process_callbacks(config)
+# Use callbacks in training loop
+```
 
 ---
 
-### model_setup.py
-
-The `model_setup.py` script provides tools for configuring models, loss functions, and optimizers.
-
-#### Functions:
-
-- **`setup_model(model_name: str, pretrained_weights: bool, num_classes: int) -> nn.Module`**:
-  - Sets up a pre-trained model with a customized classification head.
-  - Supported models include MobileNet, ResNet, VGG, EfficientNet, and more.
-
-- **`setup_criterion(criterion: str) -> nn.Module`**:
-  - Configures the loss function for training.
-  - Supported loss functions: CrossEntropy, MSE, L1, NLL, BCE, BCEWithLogits.
-
-- **`setup_optimizer(model, optimizer: str, learning_rate: float)`**:
-  - Configures the optimizer for training.
-  - Supported optimizers: Adam, SGD, RMSprop, Adagrad, AdamW.
-
-- **`training_setup(model_name: str, learning_rate: float, criterion: str, optimizer: str, pretrained_weights: bool, num_classes: int)`**:
-  - Provides a complete setup for the model, optimizer, and loss function.
-  - Returns the configured model, loss function, and optimizer.
-
----
-
-### parsing.py
-
-The `parsing.py` script provides utilities for parsing command-line arguments and configuration files. It supports flexible configuration management and logging.
-
-#### Functions:
-
-- **`load_args_from_file(file_path: str) -> dict[str, str]`**:
-  - Reads arguments from a configuration file (CSV, JSON, YAML) and returns them as a dictionary.
-
-- **`configure_logging(logs: bool, save_dir: str)`**:
-  - Configures logging to write to a file and optionally to the console.
-
-- **`validate_args(args: dict)`**:
-  - Validates parsed arguments to ensure they meet expected conditions.
-
-- **`parse() -> dict[str, int | str | list]`**:
-  - Parses command-line arguments and configuration file inputs for training models.
-  - Returns a dictionary of parsed and validated configuration values.
-
----
-
-### preprocessing.py
-
-The `preprocessing.py` script handles dataset preprocessing, including data augmentation, normalization, and splitting datasets into training, validation, and test sets.
-
-#### Functions:
-
-- **`log_dataset_statistics(dataset, dataset_name: str)`**:
-  - Logs the size and class distribution of a dataset.
-
-- **`log_all_statistics(loaders: dict[str, DataLoader])`**:
-  - Logs statistics for all DataLoaders.
-
-- **`load_data(dataset: str, batch_size: int = 32, train_split: float = 0.8, test_split: float = 0.1, img_size: int = 224, mean: tuple[float, float, float] = (0.485, 0.456, 0.406), std: tuple[float, float, float] = (0.229, 0.224, 0.225), use_augmentation: bool = False) -> dict[str, DataLoader]`**:
-  - Loads and preprocesses data, handling both pre-split and unsplit datasets.
-  - Returns a dictionary containing DataLoaders for 'train', 'val', and optionally 'test'.
-
----
-
-## How to Use
-
-### Example: Model Evaluation
-
-1. Import the `evaluate` function:
-   ```python
-   from model_compression.src.utils.eval import evaluate
-   ```
-
-2. Call `evaluate` with the appropriate parameters:
-   ```python
-   evaluate(
-       model_path="path/to/saved_model.pth",
-       img_size=224,
-       dataset="SkinCancer",
-       save_dir="evaluation_outputs"
-   )
-   ```
-
-### Example: Metric Visualization
-
-1. Import the plotting functions:
-   ```python
-   from model_compression.src.utils.metrics import plot_metric_bar, plot_confusion_matrix
-   ```
-
-2. Use the functions with your metrics:
-   ```python
-   metrics = {"Accuracy": 0.95, "Precision": 0.92, "Recall": 0.93, "F1-Score": 0.94}
-   plot_metric_bar(metrics, save_path="metrics_bar_chart.png")
-   ```
-
-### Example: Model Setup
-
-1. Import the `training_setup` function:
-   ```python
-   from model_compression.src.utils.model_setup import training_setup
-   ```
-
-2. Configure the training components:
-   ```python
-   model, criterion, optimizer = training_setup(
-       model_name="mobilenet_v2",
-       learning_rate=0.001,
-       criterion="cross_entropy",
-       optimizer="adam",
-       pretrained_weights=True,
-       num_classes=3
-   )
-   ```
-
-### Example: Argument Parsing
-
-1. Import the `parse` function:
-   ```python
-   from model_compression.src.utils.parsing import parse
-   ```
-
-2. Parse arguments and load configuration:
-   ```python
-   config = parse()
-   ```
-
-### Example: Data Preprocessing
-
-1. Import the `load_data` function:
-   ```python
-   from model_compression.src.utils.preprocessing import load_data
-   ```
-
-2. Load and preprocess data:
-   ```python
-   loaders = load_data(
-       dataset="SkinCancer",
-       batch_size=32,
-       train_split=0.8,
-       test_split=0.1,
-       img_size=224,
-       use_augmentation=True
-   )
-   ```
-
----
-
-For more details, refer to the source code in the `utils` folder.
-
+For detailed API and advanced options, refer to the source code in the `utils` folder.

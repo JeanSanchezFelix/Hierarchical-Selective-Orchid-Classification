@@ -9,7 +9,7 @@ from torch.ao.quantization.quantize_fx import prepare_qat_fx
 from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e
 from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 
-from model_compression.src.utils.model_setup import setup_model, setup_criterion, setup_optimizer
+from model_compression.src.utils.model_setup import _setup_model, _setup_criterion, _setup_optimizer
 
 def setup_qat_student_model(model_name: str, num_classes: int) -> nn.Module:
     """

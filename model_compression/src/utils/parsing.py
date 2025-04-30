@@ -1,129 +1,154 @@
 import os
 import csv
-import yaml
 import json
+import yaml
 import argparse
 import logging
+from typing import Any, Dict, Optional, Union, List
+
+from datasets.registry import DATASET_REGISTRY
 from model_compression.src.utils.callbacks import process_callbacks
 from model_compression.src.utils.logging_setup import configure_logging
 
-# Function to load arguments from a config file (.csv)
-def load_args_from_file(file_path: str) -> dict[str,str]:
-    """
-    Reads arguments from a configuration file (CSV, JSON, YAML) and returns them as a dictionary.
-    """
-    args_from_file = {}
-    try:
-        if file_path.endswith(".csv"):
-            with open(file_path, mode="r") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    for key, value in row.items():
-                        args_from_file[key] = value.strip() if value else None
-        elif file_path.endswith(".json"):
-            with open(file_path, mode="r") as f:
-                args_from_file = json.load(f)
-        elif file_path.endswith(".yaml") or file_path.endswith(".yml"):
-            with open(file_path, mode="r") as f:
-                args_from_file = yaml.safe_load(f)
-        else:
-            raise ValueError("Unsupported file format. Please provide a .csv, .json, or .yaml file.")
-    except Exception as e:
-        raise ValueError(f"Error reading the config file: {e}")
-    return args_from_file
 
-def validate_args(args):
+def _load_args_from_file(
+    file_path: str
+) -> Dict[str, Any]:
     """
-    Validate the parsed arguments.
+    Load configuration arguments from a file (CSV, JSON, or YAML).
+
+    Supports:
+      - CSV: expects header row with key/value columns.
+      - JSON: expects a JSON object.
+      - YAML: expects a YAML mapping.
 
     Args:
-        args (dict): Parsed arguments.
-
-    Raises:
-        ValueError: If validation checks fail.
-    """
-    if args["img_size"] <= 0:
-        raise ValueError("The image size (--img_size) must be a positive integer.")
-    if args["epochs"] <= 0:
-        raise ValueError("The number of epochs (--epochs) must be a positive integer.")
-    if args["batch_size"] <= 0:
-        raise ValueError("The batch size (--batch_size) must be a positive integer.")
-    if args["learning_rate"] <= 0:
-        raise ValueError("The learning rate (--learning_rate) must be a positive number.")
-    if not (0.0 < args["train_split"] <= 1.0):
-        raise ValueError("The training split (--train_split) must be between 0.0 and 1.0.")
-    if not (0.0 <= args["test_split"] < 1.0):
-        raise ValueError("The test split (--test_split) must be between 0.0 and 1.0.")
-    if args["train_split"] + args["test_split"] >= 1.0:
-        raise ValueError("The sum of train_split and test_split must be less than 1.0.")
-    if args["pretrained_weights"] and not os.path.exists(args["pretrained_weights"]):
-        raise ValueError(f"The specified pretrained weights ({args['pretrained_weights']:}) do not exist.")
-
-    # Logging configuration details
-    logging.info("Configuration:")
-
-    for argument, value in args.items():
-        logging.info(f"{argument.upper()}: {value}")
-
-
-# TODO: Simplify Command line arguments parsing? Force some of the parameters to be from conifguration files?
-def parse() -> dict[str, int | str | list]:
-    """
-    Parse command-line arguments and configuration file inputs for training models.
-
-    This function handles the parsing of various configuration parameters needed for
-    training models. It supports command-line arguments and optionally loads additional
-    configurations from a CSV file. Command-line arguments override the configurations
-    loaded from the file.
+        file_path: Path to the configuration file.
 
     Returns:
-        dict: A dictionary containing the parsed and validated configuration values:
-            - MODEL_NAME (str): Name of the pre-trained model to use.
-            - EPOCHS (int): Number of epochs for training.
-            - DATASET (str): Dataset that will be used for training.
-            - BATCH_SIZE (int): Batch size for training.
-            - LEARNING_RATE (float): Learning rate for the optimizer.
-            - CRITERION (str): Criterion to use.
-            - OPTIMIZER (str): Optimizer to use.
-            - TRAIN_SPLIT (float): Proportion of data used for training (0.0 - 1.0).
-            - TEST_SPLIT (float): Proportion of data used for testing (0.0 - 1.0).
-            - IMG_SIZE (int): Image size for input to the model (e.g., 224 for 224x224 images).
-            - DATA_AUGMENTATION (bool): Whether to use data augmentation (True or False).
-            - SAVE_DIR (str): Directory where trained models will be saved.
-            - LOGGING (int): Configure if logs will be displayed on the CLI.
+        args: A dict of parsed arguments.
 
     Raises:
-        ValueError: If any of the arguments fail validation checks.
+        ValueError: For unsupported formats or parsing errors.
+    """
+    args: Dict[str, Any] = {}
+    try:
+        ext = os.path.splitext(file_path)[1].lower()
+        with open(file_path, 'r') as f:
+            if ext == '.csv':
+                reader = csv.DictReader(f)
+                for row in reader:
+                    for k, v in row.items():
+                        args[k] = v.strip() if isinstance(v, str) and v.strip() else v
+            elif ext == '.json':
+                args = json.load(f)
+            elif ext in ('.yaml', '.yml'):
+                args = yaml.safe_load(f)
+            else:
+                raise ValueError(f"Unsupported file format: {ext}")
+    except Exception as e:
+        raise ValueError(f"Failed to load config from {file_path}: {e}")
+    return args
+
+def _validate_args(
+    args: Dict[str, Any]
+) -> None:
+    """
+    Validate core training configuration arguments.
+
+    Args:
+        args: Dictionary of arguments to validate.
+
+    Raises:
+        ValueError: If any argument is invalid.
+    """
+    # Numeric checks
+    if args.get('img_size', 0) <= 0:
+        raise ValueError("--img_size must be > 0")
+    if args.get('epochs', 0) <= 0:
+        raise ValueError("--epochs must be > 0")
+    if args.get('batch_size', 0) <= 0:
+        raise ValueError("--batch_size must be > 0")
+    if args.get('learning_rate', 0.0) <= 0.0:
+        raise ValueError("--learning_rate must be > 0")
+
+    # Split checks
+    train_split = args.get('train_split', 0.0)
+    test_split = args.get('test_split', 0.0)
+    if not 0.0 < train_split < 1.0:
+        raise ValueError("--train_split must be in (0.0, 1.0)")
+    if not 0.0 <= test_split < 1.0:
+        raise ValueError("--test_split must be in [0.0, 1.0)")
+    if train_split + test_split >= 1.0:
+        raise ValueError("Sum of train_split and test_split must be < 1.0")
+
+    # Pretrained weights file exists
+    pw = args.get('pretrained_weights')
+    if pw and not os.path.isfile(pw):
+        raise ValueError(f"Pretrained weights not found: {pw}")
+
+    # Log configuration
+    logging.info("Training configuration:")
+    for k, v in args.items():
+        logging.info(f"  {k}: {v}")
+
+def parse() -> dict[str, int | str | list]:
+    """
+    Parse CLI arguments and optional config file, then validate and return settings.
+
+    Returns:
+        A dict containing all training configuration values with keys:
+          - MODEL_NAME, PRETRAINED_WEIGHTS, IMG_SIZE, EPOCHS, BATCH_SIZE,
+            LEARNING_RATE, CRITERION, OPTIMIZER, CALLBACKS, DATASET,
+            TRAIN_SPLIT, TEST_SPLIT, DATA_AUGMENTATION, SAMPLER,
+            CLASS_WEIGHTS, SAVE_DIR.
+
+    Raises:
+        ValueError: If argument validation fails.
     """
     # Argument Parsing
-
     parser = argparse.ArgumentParser(
-        description="Train models with configurable parameters and callbacks.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Configure and launch model training.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
-    # Model parameters group
+    # Model and data group
     model_group = parser.add_argument_group("Model Parameters")
     model_group.add_argument("--model_name", type=str, default="mobilenet_v2", help="Name of the pre-trained model.")
     model_group.add_argument('--pretrained_weights', type=str, default=None, help='Path to pretrained weights.')
     model_group.add_argument("--img_size", type=int, default=224, help="Image size for model input.")
+    model_group.add_argument('--dataset', type=str, choices=list(DATASET_REGISTRY.keys()), required=True,
+                            help='Dataset that will be used for training.')
 
-    # Training parameters group
+    # Training group
     training_group = parser.add_argument_group("Training Parameters")
     training_group.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
     training_group.add_argument("--batch_size", type=int, default=32, help="Batch size for training.")
     training_group.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for the optimizer.")
-    training_group.add_argument('--criterion', type=str, choices=["cross_entropy", "mse", "l1", "nll", "bce", "bce_with_logits"], 
-                        default="cross_entropy", help='Optimizer to use')
-    training_group.add_argument("--optimizer", type=str, choices=["adam", "sgd", "rmsprop", "adagrad", "adamw"], 
-                                default="adam", help="Optimizer.")
+    training_group.add_argument('--criterion', type=str,
+                        choices=["cross_entropy","mse","l1","nll","bce","bce_with_logits"],
+                        default='cross_entropy',
+                        help="Criterion to use.")
+    training_group.add_argument('--optimizer', type=str,
+                        choices=["adam","sgd","rmsprop","adagrad","adamw"],
+                        default='adam',
+                        help="Optimizer to use.")
     
-    # Callbacks parameters group
+    # Data handling group
+    data_group = parser.add_argument_group("Data Parameters")
+    data_group.add_argument("--train_split", type=float, default=0.8, help="Proportion of data for training (0.0-1.0).")
+    data_group.add_argument("--test_split", type=float, default=0.1, help="Proportion of data for testing (0.0-1.0).")
+    data_group.add_argument("--data_augmentation", action="store_true", default=0, help="Enable data augmentation: 0 (False), 1 (True).")
+    data_group.add_argument("--sampler", action="store_true", default=0, help="Enable weighted sampler: 0 (False), 1 (True).")
+    data_group.add_argument("--class_weights", action="store_true", default=0, help="Enable class weights: 0 (False), 1 (True).")
+
+    
+    # Callbacks group
     callback_group = parser.add_argument_group("Callback Parameters")
     callback_group.add_argument("--callbacks", type=str, nargs="*", default=["ModelCheckpoint"], 
                                 choices=["EarlyStopping", "ModelCheckpoint", "ReduceLROnPlateau"], help="List of callbacks.")
 
-    # ModelCheckpoint parameters
+    # ModelCheckpoint
     callback_group.add_argument("--ModelCheckpoint_monitor", type=str, default="val_loss", 
                                  help="Monitor for ModelCheckpoint.")
     callback_group.add_argument("--ModelCheckpoint_save_best_only", action="store_true", default=True, 
@@ -135,7 +160,7 @@ def parse() -> dict[str, int | str | list]:
     callback_group.add_argument("--ModelCheckpoint_verbose", action="store_true", default=False, 
                                  help="Verbose for EarlyStopping.")
 
-    # EarlyStopping parameters
+    # EarlyStopping
     callback_group.add_argument("--EarlyStopping_monitor", type=str, default="val_loss", 
                                  help="Monitor for EarlyStopping.")
     callback_group.add_argument("--EarlyStopping_patience", type=int, default=5, 
@@ -149,7 +174,7 @@ def parse() -> dict[str, int | str | list]:
     callback_group.add_argument("--EarlyStopping_verbose", action="store_true", default=False, 
                                  help="Verbose for EarlyStopping.")
 
-    # ReduceLROnPlateau parameters
+    # ReduceLROnPlateau
     callback_group.add_argument("--ReduceLROnPlateau_monitor", type=str, default="val_loss", 
                                  help="Monitor for ReduceLROnPlateau_monitor.")
     callback_group.add_argument("--ReduceLROnPlateau_factor", type=float, default=0.1, 
@@ -164,65 +189,55 @@ def parse() -> dict[str, int | str | list]:
                                  help="Minimum learning rate for ReduceLROnPlateau.")
     callback_group.add_argument("--ReduceLROnPlateau_verbose", action="store_true", default=False, 
                                  help="Verbose for ReduceLROnPlateau.")
-
-    # Data parameters group
-    data_group = parser.add_argument_group("Data Parameters")
-    data_group.add_argument('--dataset', type=str, choices=["CpAnemia", "MonkeyPox", "SkinCancer"], required=True,
-                         help='Dataset that will be used for training.')
-    data_group.add_argument("--train_split", type=float, default=0.8, help="Proportion of data for training (0.0-1.0).")
-    data_group.add_argument("--test_split", type=float, default=0.1, help="Proportion of data for testing (0.0-1.0).")
-    data_group.add_argument("--data_augmentation", action="store_true", default=0, help="Enable data augmentation: 0 (False), 1 (True).")
-    data_group.add_argument("--sampler", action="store_true", default=0, help="Enable weighted sampler: 0 (False), 1 (True).")
-    data_group.add_argument("--class_weights", action="store_true", default=0, help="Enable class weights: 0 (False), 1 (True).")
-
-    # Miscellaneous parameters group
+    
+    # Miscellaneous group
     misc_group = parser.add_argument_group("Miscellaneous")
     misc_group.add_argument("--save_dir", type=str, default="./models", help="Directory to save models.")
     misc_group.add_argument("--save_name", type=str, default="best_model", help="Name to be used for saving model.")
-    misc_group.add_argument("--config_file", type=str, help="Path to a YAML, CSV or JSON configuration file.")
+    misc_group.add_argument("--config_file", type=str, default=None, help="Path to a YAML, CSV or JSON configuration file.")
     misc_group.add_argument('--logging', action="store_true", help='Enable CLI logging: 0 (False), 1 (True)')
-    
 
-    # Parse command-line arguments
-    args = parser.parse_args()
+    # Parse args
+    cli_args = vars(parser.parse_args())  # type: ignore
 
-    # Load configuration from file if provided
-    config_args = load_args_from_file(args.config_file) if args.config_file else {}
+    # Load file overrides
+    file_args: Dict[str, Any] = {}
+    if cli_args.get('config_file'):
+        file_args = _load_args_from_file(cli_args['config_file'])
 
     # Combine arguments (CLI > Config File > Default)
-    combined_args = {**config_args, **vars(args)}
+    config = {**file_args, **cli_args}
 
-    combined_args['save_dir'] = os.path.join(combined_args['save_dir'], combined_args['dataset'])
+    # Adjust save_dir
+    config['save_dir'] = os.path.join(config['save_dir'], config['dataset'])
     
     # Configure logging
-    configure_logging(combined_args['logging'], combined_args['save_dir'])
+    configure_logging(enable_console=config['logging'], log_dir=config['save_dir'])
 
-    # Validate arguments
-    validate_args(combined_args)
+    # Validate
+    _validate_args(config)
 
-    # Ensure save directory exists
-    os.makedirs(combined_args['save_dir'], exist_ok=True)
+    # Ensure save directory
+    os.makedirs(config['save_dir'], exist_ok=True)
 
-    # Initialize Callbacks
-    CALLBACKS = process_callbacks(combined_args)
+    # Instantiate callbacks
+    callback_instances = process_callbacks(config)
 
     return {
-        "MODEL_NAME": combined_args['model_name'],
-        "EPOCHS": combined_args['epochs'],
-        "DATASET": combined_args['dataset'],
-        "BATCH_SIZE": combined_args['batch_size'],
-        "LEARNING_RATE": combined_args['learning_rate'],
-        "CRITERION": combined_args['criterion'],
-        "OPTIMIZER": combined_args['optimizer'],
-        "TRAIN_SPLIT": combined_args['train_split'],
-        "TEST_SPLIT": combined_args['test_split'],
-        "IMG_SIZE": combined_args['img_size'],
-        "DATA_AUGMENTATION": combined_args['data_augmentation'],
-        "SAMPLER": combined_args['sampler'],
-        "CLASS_WEIGHTS": combined_args['class_weights'],
-        "CALLBACKS": list(CALLBACKS.values()),
-        "PRETRAINED_WEIGHTS": combined_args['pretrained_weights'],
-        "SAVE_DIR": combined_args['save_dir']
+        'MODEL_NAME': config['model_name'],
+        'PRETRAINED_WEIGHTS': config['pretrained_weights'],
+        'IMG_SIZE': config['img_size'],
+        'DATASET': config['dataset'],
+        'EPOCHS': config['epochs'],
+        'BATCH_SIZE': config['batch_size'],
+        'LEARNING_RATE': config['learning_rate'],
+        'CRITERION': config['criterion'],
+        'OPTIMIZER': config['optimizer'],
+        'TRAIN_SPLIT': config['train_split'],
+        'TEST_SPLIT': config['test_split'],
+        'DATA_AUGMENTATION': config['data_augmentation'],
+        'SAMPLER': config['sampler'],
+        'CLASS_WEIGHTS': config['class_weights'],
+        'CALLBACKS': list(callback_instances.values()),
+        'SAVE_DIR': config['save_dir']
     }
-
-# if __name__ == "__main__":

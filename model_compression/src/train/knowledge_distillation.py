@@ -247,8 +247,7 @@ def _train_and_evaluate_kd(
                 "batch_size": train_loader.batch_size, 
                 "learning_rate": learning_rate, 
                 "optimizer": optimizer,
-                "criterion": criterion,
-                "epoch": epoch}
+                "criterion": criterion}
 
         # Start epoch callbacks
         for callback in callbacks:
