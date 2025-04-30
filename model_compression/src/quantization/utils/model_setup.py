@@ -229,14 +229,14 @@ def _kd_setup(
     student: str,
     teacher: str, 
     learning_rate: float, 
-    criterion: str, 
-    optimizer: str, 
-    teacher_model_weights: Optional[str], 
+    criterion_name: str, 
+    optimizer_name: str, 
     dataloader: DataLoader,
+    class_weights: bool = False,
+    teacher_model_weights: Optional[str] = None, 
     quant_mode: Optional[str] = None,
     config: Optional[str] = None,
-    class_weights: bool = False,
-    device: torch.device = torch.device("cuda")
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ) -> tuple[nn.Module, nn.Module, nn.Module, torch.optim.Optimizer]:
     """
     Sets up the teacher and student models, loss function, and optimizer for a combined 
@@ -291,8 +291,8 @@ def _kd_setup(
     teacher_model = setup_model(teacher, teacher_model_weights, num_classes)
 
     # Configure the loss function with optional class weights.
-    criterion_fn = setup_criterion(criterion, dataloader, class_weights)
+    criterion = setup_criterion(criterion_name, dataloader, class_weights)
     # Configure the optimizer for the student model.
-    optimizer_obj = setup_optimizer(student_model, optimizer, learning_rate)
+    optimizer = setup_optimizer(student_model, optimizer_name, learning_rate)
 
-    return teacher_model, student_model, criterion_fn, optimizer_obj
+    return teacher_model, student_model, criterion, optimizer

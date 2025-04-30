@@ -173,13 +173,14 @@ def setup_optimizer(model, optimizer_name: str, learning_rate: float):
 
     return opt
 
-def tf_setup(model_name: str, 
-                learning_rate: float, 
-                criterion: str, 
-                optimizer: str, 
-                pretrained_weights: bool, 
-                dataloader: torch.utils.data.DataLoader,
-                class_weights: bool
+def tf_setup(
+    model_name: str, 
+    learning_rate: float, 
+    criterion_name: str, 
+    optimizer_name: str, 
+    pretrained_weights: bool, 
+    data_loader: torch.utils.data.DataLoader,
+    class_weights: bool
 ) -> tuple[nn.Module, nn.Module, torch.optim.Optimizer]:
     """
     Complete setup for the model, optimizer, and loss function.
@@ -196,8 +197,8 @@ def tf_setup(model_name: str,
         tuple: Configured model, loss function, and optimizer.
     """
     # Configure model, criterion, and optimizer
-    num_classes = len(dataloader.dataset.classes)
+    num_classes = len(data_loader.dataset.classes)
     model = setup_model(model_name, pretrained_weights, num_classes)
-    criterion_fn = setup_criterion(criterion, dataloader, class_weights)
-    optimizer_obj = setup_optimizer(model, optimizer, learning_rate)
-    return model, criterion_fn, optimizer_obj
+    criterion= setup_criterion(criterion_name, data_loader, class_weights)
+    optimizer = setup_optimizer(model, optimizer_name, learning_rate)
+    return model, criterion, optimizer

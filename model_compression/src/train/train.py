@@ -21,12 +21,13 @@ def transfer_learning(
     save_dir: str,
     learning_rate: float = 0.001,
     num_epochs: int = 5,
-    loss_name: str = "cross_entropy",
+    criterion_name: str = "cross_entropy",
     optimizer_name: str = "adam",
     callbacks: Optional[List[Callback]] = None,
     pretrained_weights: Optional[str] = None,
     use_class_weights: bool = False,
-    freeze_base_layers: bool = True
+    freeze_base_layers: bool = True,
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ) -> nn.Module:
     """
     Train a model using transfer learning.
@@ -37,12 +38,13 @@ def transfer_learning(
         save_dir: Directory to save checkpoints and metrics.
         learning_rate: Learning rate for optimizer.
         num_epochs: Number of training epochs.
-        loss_name: Loss function identifier ('cross_entropy', 'bce', etc.).
+        criterion_name: Loss function identifier ('cross_entropy', 'bce', etc.).
         optimizer_name: Optimizer identifier ('adam', 'sgd', etc.).
         callbacks: List of Callback instances to trigger during training.
         pretrained_weights: Path to pretrained weights file for fine-tuning.
         use_class_weights: Whether to compute and apply class weights.
         freeze_base_layers: Whether to freeze all layers except classifier.
+        device: Computation device.
 
     Returns:
         model: The trained PyTorch model.
@@ -50,7 +52,6 @@ def transfer_learning(
     Raises:
         RuntimeError: If training fails or model cannot be saved.
     """
-
     # Ensure save directories exist
     os.makedirs(save_dir, exist_ok=True)
     metrics_dir = os.path.join(save_dir, "metrics")
@@ -69,15 +70,16 @@ def transfer_learning(
         model, criterion, optimizer = tf_setup(
             model_name=model_name,
             learning_rate=learning_rate,
-            criterion=loss_name,
-            optimizer=optimizer_name,
+            criterion_name=criterion_name,
+            optimizer_name=optimizer_name,
             pretrained_weights=pretrained_weights,
-            train_loader=train_loader,
+            data_loader=train_loader,
             class_weights=use_class_weights,
         )
     except Exception as error:
         logging.error(f"Model setup failed: {error}")
-        raise
+        raise RuntimeError("Failed to setup model.")
+    logging.info("Model setup complete.")
 
     # Optionally freeze base layers
     if freeze_base_layers:
@@ -93,7 +95,6 @@ def transfer_learning(
         logging.info("Base layers frozen; classifier unfrozen.")
 
     # Move model to device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     logging.info(f"Model moved to device: {device}")
 
@@ -153,11 +154,11 @@ def _train_and_evaluate(
     train_loader: DataLoader,
     val_loader: DataLoader,
     learning_rate: float,
-    criterion: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    criterion: Callable,
     optimizer: torch.optim.Optimizer,
     num_epochs: int,
-    device: torch.device,
-    callbacks: List[Callback]
+    callbacks: List[Callback],
+    device: torch.device
 ) -> Dict[str, List[float]]:
     """
     Run training and evaluation for each epoch.
@@ -198,9 +199,9 @@ def _train_and_evaluate(
                             train_loader=train_loader, 
                             criterion=criterion, 
                             optimizer=optimizer, 
-                            device=device, 
-                            epoch=epoch, 
+                            epoch=epoch,
                             num_epochs=num_epochs, 
+                            device=device, 
                             logs=logs)
         history['train'].append(train_loss)  
 
@@ -228,6 +229,8 @@ def _train_one_epoch(
     train_loader: DataLoader,
     criterion: Callable,
     optimizer: torch.optim.Optimizer,
+    epoch: int,
+    num_epochs: int,
     device: torch.device,
     logs: Dict[str, Any]
 ) -> float:
@@ -240,6 +243,8 @@ def _train_one_epoch(
         criterion: Loss function.
         optimizer: Optimizer instance.
         device: Device to train on.
+        epoch: Current epoch index.
+        num_epochs: Total number of epochs.
         logs: Logging and callback dictionary.
 
     Returns:
@@ -249,7 +254,7 @@ def _train_one_epoch(
     running_loss, total_samples = 0.0, 0
     predictions, ground_truths, probabilities = [], [], []
 
-    with tqdm(total=len(train_loader), desc=f"Training", leave=False) as pbar:
+    with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{num_epochs}", leave=False) as pbar:
         for inputs, labels in train_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad() # Zero gradients during training
@@ -265,9 +270,9 @@ def _train_one_epoch(
             total_samples += batch_size
 
             # Accumulate predictions and ground truths for metrics
-            ground_truths.extend(labels.cpu().numpy())
-            probabilities.extend(probs.cpu().numpy())
-            predictions.extend(preds.cpu().numpy())
+            ground_truths.extend(labels.cpu().detach().numpy())
+            probabilities.extend(probs.cpu().detach().numpy())
+            predictions.extend(preds.cpu().detach().numpy())
             
             # Update progress bar with average loss so far
             pbar.set_postfix(loss=f"{running_loss / total_samples:.4f}")

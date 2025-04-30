@@ -1,7 +1,8 @@
 import logging
-from model_compression.src.utils import parse, load_data, evaluate
+from model_compression.src.utils import parse, load_data
 from model_compression.src.train import transfer_learning 
-import torch.nn as nn
+from model_compression.src.eval.pytorch_eval import evaluate
+
 # Add the root directory to sys.path to access datasets
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
@@ -35,12 +36,12 @@ def main():
         data_loaders=data_loaders,
         save_dir=args['SAVE_DIR'],
         learning_rate=args['LEARNING_RATE'],
-        epochs=args['EPOCHS'],
-        optimizer=args['OPTIMIZER'],
-        criterion=args['CRITERION'],
+        num_epochs=args['EPOCHS'],
+        loss_fn_name=args['CRITERION'],
+        optimizer_name=args['OPTIMIZER'],
         callbacks=args['CALLBACKS'],
         pretrained_weights=args['PRETRAINED_WEIGHTS'],
-        class_weights=args['CLASS_WEIGHTS']
+        use_class_weights=args['CLASS_WEIGHTS']
     )
 
     # Step 4: Evaluate models
