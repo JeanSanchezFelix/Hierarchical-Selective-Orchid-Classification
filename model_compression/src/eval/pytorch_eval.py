@@ -124,7 +124,7 @@ def evaluate(
     img_size: int,
     dataset_name: str,
     save_dir: Optional[str] = None,
-    device: torch.device = torch.devices("cuda" if torch.cuda.is_available() else "cpu"),
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
 ) -> None:
     """
     Load a saved model and metadata, run evaluation on the test set, and save results.

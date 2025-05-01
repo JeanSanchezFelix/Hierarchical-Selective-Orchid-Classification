@@ -1,17 +1,8 @@
 import os
-import time
-import copy
-import numpy as np
-import logging
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from tqdm import tqdm
-from torch.utils.data import DataLoader
-from typing import Callable, Optional, Any
 
 from model_compression.src.utils import load_data, process_callbacks
-from model_compression.src.Quantization.quantization_utils.conversions.onnx import export_pytorch_to_onnx, export_onnx_to_savedmodel, export_savedmodel_to_tflite
+from model_compression.src.converters import export_pytorch_to_onnx, export_onnx_to_savedmodel, convert_tensorflow_model_to_tflite
 from model_compression.src.train.knowledge_distillation import train_qat_kd
 from model_compression.src.utils.logging_setup import configure_logging
 
@@ -67,7 +58,7 @@ def main():
 
     # 4. Convert SavedModel → TFLite
     tflite_path = os.path.join(save_dir, f"{student_model}_qat_kd.tflite")
-    export_savedmodel_to_tflite(tf_saved_model_dir, tflite_path, dataloaders["train"])
+    convert_tensorflow_model_to_tflite(tf_saved_model_dir, tflite_path, dataloaders["train"])
 
 if __name__ == "__main__":
     main()
