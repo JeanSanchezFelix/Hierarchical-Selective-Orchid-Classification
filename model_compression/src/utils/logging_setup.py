@@ -2,36 +2,47 @@ import os
 import logging
 from typing import Optional
 
-def configure_logging(logs: bool = False, save_dir: Optional[str] = None):
+def configure_logging(
+    enable_console: bool = False,
+    log_dir: Optional[str] = None
+) -> None:
     """
-    Configures logging to write to a file (if save_dir is provided) 
-    and optionally to the console.
+    Configure the root logger to output INFO-level messages to a file and/or console.
 
     Args:
-        logs (bool): Whether to log messages to the console.
-        save_dir (Optional[str]): Directory where the log file will be saved.
+        enable_console: If True, adds a console (stdout) logging handler.
+        log_dir: Optional directory path to save the log file. If provided,
+                 a 'training.log' file will be created in this directory.
+
+    Raises:
+        RuntimeError: If the specified log directory cannot be created.
     """
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
 
-    # Clear existing handlers to prevent duplicates
-    if logger.hasHandlers():
-        logger.handlers.clear()
+    # Remove existing handlers to avoid duplicate logs
+    if root_logger.hasHandlers():
+        root_logger.handlers.clear()
 
-    formatter = logging.Formatter('[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s')
-
-    # File handler (if save_dir is provided)
-    if save_dir:
-        os.makedirs(save_dir, exist_ok=True)
-        log_file = os.path.join(save_dir, 'training.log')
-        file_handler = logging.FileHandler(log_file)
+    # Define log message format
+    formatter = logging.Formatter(
+        '[%(levelname)s %(asctime)s %(filename)s:%(lineno)d] %(message)s'
+    )
+    # File handler: write logs to file if log_dir is specified
+    if log_dir:
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+        except Exception as e:
+            raise RuntimeError(f"Could not create log directory '{log_dir}': {e}")
+        log_file_path = os.path.join(log_dir, 'training.log')
+        file_handler = logging.FileHandler(log_file_path)
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+        root_logger.addHandler(file_handler)
 
-    # Optional console stream handler
-    if logs:
-        stream_handler = logging.StreamHandler()
-        stream_handler.setLevel(logging.INFO)
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
+    # Console handler: output logs to stdout if enabled
+    if enable_console:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)

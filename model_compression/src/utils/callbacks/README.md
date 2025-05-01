@@ -1,179 +1,170 @@
 # Callbacks Module
 
-The `callbacks` module provides a set of utilities to manage various aspects of training workflows in PyTorch. Callbacks are designed to be hooks that are executed at specific points during training, such as at the start or end of an epoch, to enable features like early stopping, model checkpointing, and learning rate scheduling.
+The `callbacks` module provides utilities to manage training workflows in PyTorch through hookable components. Each callback executes specific logic at predefined points during training (e.g., epoch start/end), enabling features such as early stopping, checkpointing, learning-rate scheduling, and more.
 
 ---
 
 ## Folder Structure
-```
+```plaintext
 callbacks/
 ├── __init__.py
-├── callbacks.py 
-├── registry.py 
+├── callbacks.py       # Definitions of callback classes
+└── registry.py        # Callback registry and factory 
 ```
+
+---
 
 ## Contents
 
-- [Overview of Callbacks](#overview-of-callbacks)
+- [Overview](#modules-overview)
 - [Available Callbacks](#available-callbacks)
   - [Base Class: `Callback`](#base-class-callback)
   - [`ModelCheckpoint`](#modelcheckpoint)
   - [`EarlyStopping`](#earlystopping)
   - [`ReduceLROnPlateau`](#reducelronplateau)
+  - [`LRScheduler`](#lrscheduler)
 - [Callback Registry](#callback-registry)
-- [How to Use Callbacks](#how-to-use-callbacks)
-- [Examples](#examples)
+- [How to Use](#how-to-use)
 
 ---
 
-## Overview of Callbacks
+## Modules Overview
 
-Callbacks are modular and reusable components used to perform specific actions during training, such as:
+Callbacks are modular, reusable components that hook into the training loop to perform tasks such as:
 
-- Saving the model when a monitored metric improves.
-- Stopping training if a monitored metric stops improving for a specified number of epochs.
-- Adjusting the learning rate dynamically when the monitored metric plateaus.
+- Saving model checkpoints when metrics improve
+- Stopping training early based on validation performance
+- Dynamically adjusting the learning rate
+- Logging custom metrics or behaviors
 
-The module includes:
-- `callbacks.py`: Defines the callback classes.
-- `registry.py`: Provides a registry to manage callback instantiation.
+All callback classes inherit from the `Callback` base class defined in `callbacks.py`, which provides empty hook methods:
+
+```python
+class Callback:
+    def on_train_start(self, logs=None): ...
+    def on_epoch_start(self, epoch, logs=None): ...
+    def on_validation_start(self, logs=None): ...
+    def on_validation_end(self, logs=None): ...
+    def on_epoch_end(self, epoch, logs=None): ...
+    def on_train_end(self, logs=None): ...
+```
 
 ---
 
 ## Available Callbacks
 
 ### Base Class: `Callback`
-
-The `Callback` class is a base class for all callbacks. It defines the following hook methods, which are intended to be overridden by subclasses:
-
-- `on_epoch_start(epoch: int, logs: dict = None)`: Triggered at the start of an epoch.
-- `on_epoch_end(epoch: int, logs: dict = None)`: Triggered at the end of an epoch.
-- `on_train_start(logs: dict = None)`: Triggered at the start of training.
-- `on_train_end(logs: dict = None)`: Triggered at the end of training.
-- `on_validation_start(logs: dict = None)`: Triggered at the start of validation.
-- `on_validation_end(logs: dict = None)`: Triggered at the end of validation.
+Abstract base for all callbacks; implements hook methods that receive a `logs` dictionary containing training state (e.g., metrics, model, optimizer).
 
 ---
 
 ### `ModelCheckpoint`
 
-#### Description:
-Saves the model during training whenever a monitored metric improves.
+**Description:**
+Saves the model’s state dict (and metadata) when a monitored metric improves.
 
-#### Parameters:
-- `monitor (str)`: The metric to monitor (e.g., `val_loss`).
-- `save_best_only (bool)`: If `True`, only the best model is saved.
-- `mode (str)`: One of `{'min', 'max'}` to determine whether a decrease or increase in the monitored metric is considered an improvement.
-- `filepath (str)`: Path to save the model checkpoint.
-- `verbose (bool)`: If `True`, logs when a model is saved.
+**Constructor Arguments:**
+- `monitor: str` — metric key to watch (default `'val_loss'`).
+- `save_best_only: bool` — if `True`, overwrite only on improvement.
+- `mode: {'min','max'}` — whether lower or higher values are better.
+- `save_path: str` — file path for saving the checkpoint.
+- `verbose: bool` — logs save events if `True`.
 
 ---
 
 ### `EarlyStopping`
 
-#### Description:
-Stops training when a monitored metric stops improving for a specified number of epochs.
+**Description:**
+Halts training if the monitored metric fails to improve for a set number of epochs.
 
-#### Parameters:
-- `monitor (str)`: The metric to monitor (e.g., `val_loss`).
-- `patience (int)`: The number of epochs to wait before stopping.
-- `min_delta (float)`: Minimum change to qualify as an improvement.
-- `mode (str)`: One of `{'min', 'max'}`.
-- `save_path (str)`: File path to save the best model.
-- `verbose (bool)`: If `True`, logs messages when Early Stop is triggered.
+**Constructor Arguments:**
+- `monitor: str` — metric to watch.
+- `patience: int` — epochs with no improvement before stopping.
+- `min_delta: float` — minimal change to qualify as improvement.
+- `mode: {'min','max'}`
+- `save_path: str` — where to save the best model weights.
+- `verbose: bool` — logs progress if `True`.
 
 ---
 
 ### `ReduceLROnPlateau`
 
-#### Description:
-Reduces the learning rate when a monitored metric stops improving.
+**Description:**
+Reduces the optimizer’s learning rate when the monitored metric plateaus.
 
-#### Parameters:
-- `monitor (str)`: The metric to monitor (e.g., `val_loss`).
-- `factor (float)`: Factor by which the learning rate is reduced.
-- `patience (int)`: Number of epochs to wait before reducing the learning rate.
-- `min_delta (float)`: Minimum change to qualify as an improvement.
-- `mode (str)`: One of `{'min', 'max'}`.
-- `min_lr (float)`: Minimum allowable learning rate.
-- `verbose (bool)`: If `True`, logs when the learning rate is reduced.
+**Constructor Arguments:**
+- `monitor: str`
+- `factor: float` — LR multiplier on plateau (e.g., `0.1`).
+- `patience: int`
+- `min_delta: float`
+- `mode: {'min','max'}`
+- `min_lr: float` — lower bound for LR.
+- `verbose: bool`
+
+---
+
+### `LRScheduler`
+
+**Description:**
+Wraps any PyTorch LR scheduler (`_LRScheduler`) to call `scheduler.step()` each epoch.
+
+**Constructor Arguments:**
+- `scheduler: torch.optim.lr_scheduler._LRScheduler` — scheduler instance.
+- `verbose: bool` — logs LR changes if `True`.
 
 ---
 
 ## Callback Registry
 
-The `registry.py` file defines a `CALLBACK_REGISTRY`, which maps callback names to their constructors, and a utility function `process_callbacks()` for instantiating callbacks.
+`registry.py` defines:
 
-### `CALLBACK_REGISTRY`
-A dictionary mapping callback names (`str`) to their corresponding classes:
-- `"EarlyStopping"`
-- `"ReduceLROnPlateau"`
-- `"ModelCheckpoint"`
+- **`CALLBACK_REGISTRY`** — maps names (`str`) to callback classes.
+- **`process_callbacks(args)`** — factory that reads:
+  - `args['callbacks']`: list of callback names, and
+  - per-callback params in `args` (e.g., `'EarlyStopping_patience'`)
 
-### `process_callbacks(callback_names: list, save_dir: str)`
-#### Parameters:
-- `callback_names (list)`: Names of the callbacks to instantiate.
-- `save_dir (str)`: Directory to save checkpoint files.
-
-#### Returns:
-A list of instantiated callback objects.
+It returns a dict of instantiated callbacks ready to be passed into your training loop.
 
 ---
 
-## How to Use Callbacks
+## How to Use
 
-1. **Import Callbacks:**
+1. **Instantiate callbacks** via registry or directly:
    ```python
-   from model_compression.src.utils.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+   from model_compression.src.utils.callbacks import EarlyStopping, ModelCheckpoint
+
+   callbacks = [
+       EarlyStopping(monitor='val_loss', patience=3, save_path='best.pth'),
+       ModelCheckpoint(monitor='val_accuracy', mode='max', save_path='chkpt.pth')
+   ]
+   ```
+2. **Attach to training loop:**
+   ```python
+   for cb in callbacks:
+       cb.on_train_start()
+   for epoch in range(epochs):
+       for cb in callbacks:
+           cb.on_epoch_start(epoch)
+       # train...
+       for cb in callbacks:
+           cb.on_epoch_end(epoch, logs)
+       if any(getattr(cb, 'early_stop', False) for cb in callbacks):
+           break
+   for cb in callbacks:
+       cb.on_train_end()
+   ```
+3. **Or use `process_callbacks`:**
+   ```python
+   from model_compression.src.utils.callbacks.registry import process_callbacks
+
+   config = {'callbacks': ['EarlyStopping','LRScheduler'],
+             'EarlyStopping_patience': 5,
+             'scheduler': my_scheduler}
+   callbacks_map = process_callbacks(config)
+   callbacks = list(callbacks_map.values())
    ```
 
-2. **Use with Training Workflow:**
-   Pass instantiated callbacks to your training script and invoke their hooks at appropriate points (e.g., `on_epoch_end`).
-
-3. **Using the Registry:**
-   You can use `process_callbacks()` to streamline callback instantiation.
-
 ---
 
-## Examples
-
-### Basic Usage
-```python
-from model_compression.src.utils.callbacks import ModelCheckpoint
-
-# Initialize a ModelCheckpoint callback
-checkpoint_callback = ModelCheckpoint(
-    monitor="val_loss",
-    save_best_only=True,
-    mode="min",
-    filepath="checkpoints/best_model.pth",
-    verbose=True
-)
-
-# Call it during training
-for epoch in range(num_epochs):
-    logs = {"val_loss": compute_val_loss(), "model": model}
-    checkpoint_callback.on_epoch_end(epoch, logs)
-```
-
-### Using `process_callbacks`
-```python
-from model_compression.src.utils.callbacks.registry import process_callbacks
-
-# Define the callbacks to use
-callback_names = ["EarlyStopping", "ModelCheckpoint"]
-callbacks = process_callbacks(callback_names, save_dir="checkpoints")
-
-# Use callbacks in your training loop
-for epoch in range(num_epochs):
-    logs = {"val_loss": compute_val_loss(), "model": model}
-    for callback in callbacks:
-        callback.on_epoch_end(epoch, logs)
-        if hasattr(callback, "early_stop") and callback.early_stop:
-            print("Early stopping triggered.")
-            break
-```
----
-
-For more information, refer to the source code in `callbacks.py` and `registry.py`.
+See `callbacks.py` and `registry.py` for full API details and additional parameters.
 
