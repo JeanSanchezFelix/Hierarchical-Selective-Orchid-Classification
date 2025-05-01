@@ -26,7 +26,7 @@ def _load_args_from_file(
         file_path: Path to the configuration file.
 
     Returns:
-        args: A dict of parsed arguments.
+        A dict of parsed arguments.
 
     Raises:
         ValueError: For unsupported formats or parsing errors.

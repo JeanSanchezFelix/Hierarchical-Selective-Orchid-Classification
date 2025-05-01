@@ -14,7 +14,7 @@ from model_compression.src.utils.callbacks import Callback
 from model_compression.src.utils.metrics import calculate_metrics, plot_train_val_curve
 from model_compression.src.eval import _compute_loss_and_predictions, test_inference
 from model_compression.src.quantization.core.quantize import quantize_pytorch_model
-from model_compression.src.quantization.utils.model_setup import _kd_setup
+from model_compression.src.quantization.utils.model_setup import kd_setup
 
 def train_kd(
     teacher_name: str,
@@ -68,7 +68,7 @@ def train_kd(
         device: Computation device.
     
     Returns:
-        teacher_model, student_model: A tuple containing
+        A tuple containing
             - teacher: The loaded teacher model.
             - student: The student model after training.
 
@@ -91,7 +91,7 @@ def train_kd(
     
     # Set up model, criterion, optimizer
     try:
-        teacher_model, student_model, criterion, optimizer = _kd_setup(
+        teacher_model, student_model, criterion, optimizer = kd_setup(
             teacher=teacher_name,
             student=student_name,
             learning_rate=learning_rate,
@@ -232,7 +232,7 @@ def _train_and_evaluate_kd(
         device: Computation device
     
     Returns:
-        history: Dictionary with lists of training and validation losses.
+        Dictionary with lists of training and validation losses.
     """
     history = {'train': [], 'val': []}
     # Set teacher to evaluation mode (its parameters won't be updated)
@@ -323,15 +323,17 @@ def _train_one_epoch_kd(
         logs: Logging and callback dictionary.
 
     Returns:
-        train_loss: Average combined loss for the epoch.
+        Average combined loss for the epoch.
     """
     if quant_mode:
         student = torch.ao.quantization.allow_exported_model_train_eval(student)
 
     student.train()
     
-    running_loss, total_samples = 0.0, 0
-    predictions, ground_truths, probabilities = [], [], []
+    total_loss, total_samples = 0.0, 0
+    y_true: List[int] = []
+    y_pred: List[int] = []
+    y_proba: List[List[float]] = []
 
     with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{num_epochs}", leave=False) as pbar:
         for inputs, labels in train_loader:
@@ -358,25 +360,25 @@ def _train_one_epoch_kd(
 
             # Update running loss and sample count
             batch_size = inputs.size(0)
-            running_loss += loss.item() * batch_size
+            total_loss += loss.item() * batch_size
             total_samples += batch_size
 
             # Accumulate predictions and ground truths for metrics
-            ground_truths.extend(labels.cpu().detach().numpy())
-            probabilities.extend(probs.cpu().detach().numpy())
-            predictions.extend(preds.cpu().detach().numpy())
+            y_true.extend(labels.cpu().detach().numpy())
+            y_pred.extend(preds.cpu().detach().numpy())
+            y_proba.extend(probs.cpu().detach().numpy())
             
             # Update progress bar with average loss so far
-            pbar.set_postfix(loss=f"{running_loss / total_samples:.4f}")
+            pbar.set_postfix(loss=f"{total_loss / total_samples:.4f}")
             pbar.update(1)
 
     # Compute aggregated metrics after epoch
-    train_loss = running_loss / total_samples
+    train_loss = total_loss / total_samples
 
     # Calculate metrics
-    y_true, y_pred = np.array(ground_truths), np.array(predictions)
-    y_proba = np.array(probabilities) if probabilities else None
-    metrics = calculate_metrics(y_true, y_pred, y_proba)
+    y_true_arr, y_pred_arr = np.array(y_true), np.array(y_pred)
+    y_proba_arr = np.array(y_proba) if y_proba else None
+    metrics = calculate_metrics(y_true_arr, y_pred_arr, y_proba_arr)
 
     logging.info(f"Train Loss: {train_loss:.4f}")
     logging.info(f"Train Metrics: " + ", ".join([f"{key.lower()}: {value:.4g}" for key, value in metrics.items()]))
@@ -401,7 +403,7 @@ def _compute_distillation_loss(
         T: Softening temperature.
     
     Returns:
-        soft_loss: KL-divergence loss scaled by T^2.
+        KL-divergence loss scaled by T^2.
     """
     # Compute KL divergence loss between softened logits.
     soft_loss = F.kl_div(

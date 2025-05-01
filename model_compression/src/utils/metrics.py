@@ -37,7 +37,7 @@ def calculate_metrics(
         y_proba: Optional array of predicted probabilities or scores.
 
     Returns:
-        metrics: A dict mapping metric names to their values.
+        A dict mapping metric names to their values.
     """
     # Determine whether the task is binary or multiclass.
     num_classes = len(set(y_true))

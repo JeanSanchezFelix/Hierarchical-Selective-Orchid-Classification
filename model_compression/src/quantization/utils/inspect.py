@@ -1,53 +1,58 @@
 import os
 import logging
+from typing import Dict, Set, Optional
 
 import torch
+from torch import nn
 
 try:
     import tflite
+    from tflite import Model as TFLiteModel
 except ImportError:
     tflite = None
 
-def check_quantized_modules(model: torch.nn.Module) -> None:
+
+def check_quantized_modules(model: nn.Module) -> None:
     """
-    logging.infos out the module names and their types to help identify if quantized 
-    versions of layers are present.
-    
+    Log each submodule name and type to verify quantized layers.
+
     Args:
-        model (torch.nn.Module): The quantized model to inspect.
+        model: PyTorch model to inspect.
     """
     for name, module in model.named_modules():
-        logging.info(f"{name}: {type(module)}")
+        logging.info(f"Module '{name}': {module.__class__.__name__}")
 
-def is_quantized_model(model: torch.nn.Module) -> bool:
+
+def is_quantized_model(model: nn.Module) -> bool:
     """
-    Checks if the model is quantized based on its type.
-    
-    The quantized model produced by export quantization is a GraphModule.
-    This function returns True if the model's type name matches that.
-    
+    Determine if a PyTorch model is quantized by checking its class name.
+
     Args:
-        model (torch.nn.Module): The model to check.
-    
-    Returns:
-        bool: True if the model appears quantized, False otherwise.
-    """
-    return type(model).__name__ == "GraphModule"
+        model: Model to check.
 
-def _get_builtin_operator_map() -> dict[int, str]:
-    """
-    Builds a dictionary mapping numeric operator codes to their string names
-    by inspecting tflite.BuiltinOperator.
-    
     Returns:
-        dict[int, str]: Mapping from op code to op name.
+        True if the model appears to be a quantized GraphModule, False otherwise.
     """
-    op_map: dict[int, str] = {}
-    for attr_name in dir(tflite.BuiltinOperator):
-        if not attr_name.startswith("__"):
-            attr_value = getattr(tflite.BuiltinOperator, attr_name)
-            if isinstance(attr_value, int):
-                op_map[attr_value] = attr_name
+    return model.__class__.__name__ == 'GraphModule'
+
+def _get_builtin_operator_map() -> Dict[int, str]:
+    """
+    Build a map from TFLite BuiltinOperator integer codes to their names.
+
+    Returns:
+        Dictionary mapping op codes to op names.
+
+    Raises:
+        ImportError: If tflite module is unavailable.
+    """
+    if tflite is None:
+        raise ImportError('tflite Python API is required for operator mapping')
+    op_map: Dict[int, str] = {}
+    for attr in dir(tflite.BuiltinOperator):
+        if not attr.startswith('__'):
+            val = getattr(tflite.BuiltinOperator, attr)
+            if isinstance(val, int):
+                op_map[val] = attr
     return op_map
 
 def report_tflite_ops(tflite_model_path: str) -> None:
@@ -60,10 +65,14 @@ def report_tflite_ops(tflite_model_path: str) -> None:
     If the custom code begins with 'Flex', the operator is considered a fallback op.
     
     Args:
-        tflite_model_path (str): Path to the .tflite model file.
+        tflite_model_path: Path to the .tflite model file.
     """
-    if not os.path.exists(tflite_model_path):
-        logging.error(f"File {tflite_model_path} not found.")
+    if not os.path.isfile(tflite_model_path):
+        logging.error(f"TFLite model file not found: {tflite_model_path}")
+        return
+
+    if tflite is None:
+        logging.error('tflite Python API is required for operator inspection')
         return
 
     with open(tflite_model_path, "rb") as f:
@@ -71,9 +80,7 @@ def report_tflite_ops(tflite_model_path: str) -> None:
 
     # Load the FlatBuffer TFLite model.
     model = tflite.Model.GetRootAsModel(buf, 0)
-    total_ops = 0
-    builtin_ops = 0
-    fallback_ops = 0  # Counting SELECT_TF_OPS/fallback ops.
+    total_ops = builtin_ops = fallback_ops = 0  # Counting SELECT_TF_OPS/fallback ops.
     op_counts: dict[str, int] = {}
     select_tf_ops: set[str] = set()
 
@@ -125,15 +132,17 @@ def inspect_pth_weights(pth_file: str) -> None:
     Loads a PyTorch model from a .pth file and checks how many tensors are quantized (INT8) vs. non-quantized (FP32).
 
     Args:
-        pth_file (str): Path to the .pth file containing the model weights.
+        pth_file: Path to the .pth file containing the model weights.
     """
+    if not os.path.isfile(pth_file):
+        logging.error(f"Checkpoint file not found: {pth_file}")
+        return
+
     # Load the model checkpoint
     checkpoint = torch.load(pth_file, map_location="cpu")
 
     # Initialize counters
-    quantized_count = 0
-    non_quantized_count = 0
-    total_tensors = 0
+    quantized_count = non_quantized_count = total_tensors = 0
 
     for name, tensor in checkpoint.items():
         if isinstance(tensor, torch.Tensor):

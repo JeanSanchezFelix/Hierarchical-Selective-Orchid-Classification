@@ -9,6 +9,10 @@ The `utils` module provides foundational functionality supporting data loading, 
 utils/
 ├── __init__.py
 ├── callbacks/          # Callback classes and registry
+│   ├── __init__.py
+│   ├── callbacks.py    # Definitions of callback classe
+│   └── registry.py     # Callback registry and factory       
+│
 ├── data_imbalance.py   # Compute class weights and samplers
 ├── logging_setup.py    # Configure Python logging
 ├── metrics.py          # Compute and plot evaluation metrics
@@ -17,6 +21,13 @@ utils/
 ├── preprocessing.py    # Dataset transforms and DataLoader utilities
 └── benchmarking.py     # Measure performance, memory, power, and latency
 ```
+
+---
+
+## Contents
+
+- [Overview](#modules-overview)
+- [How to Use](#how-to-use)
 
 ---
 
@@ -73,7 +84,7 @@ utils/
 
 ---
 
-## Usage Examples
+## How to Use
 
 ### Data Loading and Preprocessing
 ```python

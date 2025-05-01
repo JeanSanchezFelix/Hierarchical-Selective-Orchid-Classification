@@ -2,6 +2,11 @@
 
 This repository contains the implementation of a model compression engine for biomedical applications, such as anemia detection through conjunctiva pallor, monkeypox classification, and skin lesion detection. The project includes pre-trained models, custom models, and utilities for training, evaluation, and preprocessing.
 
+- **Training** (transfer learning, knowledge distillation)
+- **Quantization** (Post-Training Quantization, Quantization-Aware Training)
+- **Model conversion** (ONNX, TFLite, ExecuTorch)
+- **Evaluation** and **visualization**
+
 ---
 
 ## Project Structure

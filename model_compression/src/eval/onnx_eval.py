@@ -1,43 +1,61 @@
 import os
 import logging
+from typing import Optional, Dict, Any, List
+
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 from tqdm import tqdm
-
-from model_compression.src.eval.predictions import _compute_predictions
-from model_compression.src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_roc_auc_curve, plot_radar_chart
+from torch.utils.data import DataLoader
 
 try:
     import onnxruntime
 except ImportError:
     onnxruntime = None
 
+from model_compression.src.eval.predictions import _compute_predictions
+from model_compression.src.utils.metrics import (
+    calculate_metrics,
+    plot_metric_bar,
+    plot_confusion_matrix,
+    plot_roc_auc_curve,
+    plot_radar_chart,
+    plot_calibration_curve,
+    plot_log_loss
+)
+
+
 def test_inference_onnx(
     onnx_model_path: str,
-    test_loader: DataLoader,
-    device: torch.device,  # Mostly will be CPU for ONNX
-    save_dir: str = None
-) -> None:
+    data_loader: DataLoader,
+    save_dir: Optional[str] = None
+) -> Dict[str, float]:
     """
-    Performs inference on the test dataset using an ONNX model, computes metrics, and optionally saves plots.
-    
-    This function uses ONNX Runtime to run inference on the exported ONNX model.
-    
+    Run inference using an ONNX model and compute evaluation metrics.
+
     Args:
-        onnx_model_path (str): Path to the exported ONNX model.
-        test_loader (DataLoader): DataLoader for the test dataset.
-        device (torch.device): Device to use for inference (typically CPU for ONNX).
-        save_dir (str): Directory to save plots. If None, plots will not be saved.
+        onnx_model_path: Path to the ONNX model file.
+        data_loader: DataLoader for test data.
+        save_dir: Optional directory to save plots.
+
+    Returns:
+        A dict of evaluation metrics.
+
+    Raises:
+        ImportError: If onnxruntime is not installed.
+        FileNotFoundError: If the ONNX model file is not found.
     """
-    # Load the ONNX model with ONNX Runtime.
+    # Initialize ONNX Runtime session
     session = onnxruntime.InferenceSession(onnx_model_path)
     input_name = session.get_inputs()[0].name
     
-    predictions, ground_truths, probabilities = [], [], []
-    class_labels = test_loader.dataset.classes
+    y_true: List[int] = []
+    y_pred: List[int] = []
+    y_proba: List[List[float]] = []
 
-    for inputs, labels in tqdm(test_loader, desc="ONNX Inference Progress"):
+    # Retrieve class labels from dataset
+    classes = getattr(data_loader.dataset, 'classes', None)
+
+    for inputs, labels in tqdm(data_loader, desc="ONNX Inference Progress"):
         # Convert input to NumPy array (and ensure it's on CPU).
         np_inputs = inputs.cpu().numpy()
         # Run inference using ONNX Runtime.
@@ -48,31 +66,39 @@ def test_inference_onnx(
         outputs_tensor = torch.tensor(outputs)
         # Compute predictions (this function must work with tensor or can be modified accordingly).
         probs, preds = _compute_predictions(outputs_tensor)
-        ground_truths.extend(labels.cpu().numpy())
-        predictions.extend(preds.cpu().numpy())
-        probabilities.extend(probs.cpu().numpy())
+        y_true.extend(labels.cpu().numpy())
+        y_pred.extend(preds.cpu().numpy())
+        y_proba.extend(probs.cpu().numpy())
 
     # Compute metrics similar to the original function.
-    y_true = np.array(ground_truths)
-    y_pred = np.array(predictions)
-    y_proba = np.array(probabilities) if probabilities else None
-    metrics = calculate_metrics(y_true, y_pred, y_proba)
+    y_true_arr = np.array(y_true)
+    y_pred_arr = np.array(y_pred)
+    y_proba_arr = np.array(y_proba) if y_proba else None
+    metrics = calculate_metrics(y_true_arr, y_pred_arr, y_proba_arr)
+    logging.info(f"ONNX inference metrics: {metrics}")
 
-    print("ONNX Metrics Results:")
     for metric, value in metrics.items():
         print(f"{metric}: {value:.4f}")
 
+    # Save plots if directory provided
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
-        plot_metric_bar(metrics, save_path=os.path.join(save_dir, "onnx_metrics_bar_chart.png"))
-        if class_labels is not None:
-            plot_confusion_matrix(
-                y_true=y_true,
-                y_pred=y_pred,
-                labels=class_labels,
-                save_path=os.path.join(save_dir, "onnx_confusion_matrix.png")
+        plot_metric_bar(metrics, title="ONNX Metrics", save_path=os.path.join(save_dir, "ONNX_metrics.png"))
+        plot_confusion_matrix(
+            y_true_arr, y_pred_arr, labels=classes,
+            title="Confusion Matrix", save_path=os.path.join(save_dir, "ONNX_confusion_matrix.png")
+        )
+        plot_radar_chart(metrics, save_path=os.path.join(save_dir, "ONNX_radar_chart.png"))
+        plot_log_loss(metrics, title="Log Loss over epochs", save_path=os.path.join(save_dir, "ONNX_log_loss.png"))
+        if y_proba_arr is not None:
+            plot_roc_auc_curve(
+                y_true_arr, y_proba_arr,
+                title="ROC-AUC Curve", save_path=os.path.join(save_dir, "ONNX_roc_auc.png")
             )
-        if y_proba is not None:
-            plot_roc_auc_curve(y_true, y_proba, save_path=os.path.join(save_dir, "onnx_roc_auc_curve.png"))
-        plot_radar_chart(metrics, save_path=os.path.join(save_dir, "onnx_radar_chart.png"))
-        logging.info(f"ONNX plots saved to {save_dir}")
+            plot_calibration_curve(
+                y_true_arr, y_proba_arr,
+                title="Calibration Curve", save_path=os.path.join(save_dir, "ONNX_calibration.png")
+            )
+        logging.info(f"Saved ONNX evaluation plots to {save_dir}")
+    
+    return metrics

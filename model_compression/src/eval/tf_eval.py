@@ -1,133 +1,133 @@
 import os
 import logging
+from typing import Optional, Dict, Any, List, Union
+
 import numpy as np
-from tqdm import tqdm
-from model_compression.src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_roc_auc_curve, plot_radar_chart
+
+from model_compression.src.utils.metrics import (
+    calculate_metrics,
+    plot_metric_bar,
+    plot_confusion_matrix,
+    plot_roc_auc_curve,
+    plot_radar_chart,
+    plot_calibration_curve,
+    plot_log_loss
+)
 
 try:
     import tensorflow as tf
+    from tensorflow import Tensor
+    from tensorflow.data import Dataset as TFDataset
 except ImportError:
     tf = None
 
+### TODO: Test if this works ###
+
 def test_inference_savedmodel(
     saved_model_path: str,
-    data_dir: str,
+    test_dir: str,
     batch_size: int = 32,
-    image_size: tuple = (224, 224),
-    save_dir: str = None
-) -> None:
+    image_size: Union[tuple, List[int]] = (224, 224),
+    save_dir: Optional[str] = None
+) -> Dict[str, float]:
     """
-    Performs inference on the test dataset using a TensorFlow SavedModel,
-    computes metrics, and optionally saves plots.
-
-    The test dataset is loaded from a directory structure containing "train", "val", and "test" folders.
-    It assumes that the test data is in the "test" folder within data_dir.
+    Evaluate a TensorFlow SavedModel on a test dataset directory.
 
     Args:
-        saved_model_path (str): Path to the TensorFlow SavedModel directory.
-        data_dir (str): Root directory containing "train", "val", and "test" subdirectories.
-        batch_size (int): Batch size for the test dataset. Defaults to 32.
-        image_size (tuple): Desired image size (height, width). Defaults to (224, 224).
-        save_dir (str): Directory to save plots. If None, plots will not be saved.
+        saved_model_path: Path to the SavedModel directory.
+        test_dir: Directory containing a 'test' subfolder with class subdirectories.
+        batch_size: Batch size for evaluation.
+        image_size: Tuple specifying (height, width) to resize images.
+        save_dir: Optional directory to save evaluation plots.
+
+    Returns:
+        A dict of evaluation metrics ('accuracy', 'precision', 'recall', 'f1_score', 'auc', etc.).
+
+    Raises:
+        ImportError: If TensorFlow is not installed.
+        FileNotFoundError: If model directory or test_dir/test does not exist.
     """
-    logging.info("Loading SavedModel for inference...")
-    # Load the SavedModel; note that this does not return a Keras model with predict()
+    if tf is None:
+        raise ImportError("TensorFlow is required for SavedModel evaluation but is not installed.")
+    if not os.path.isdir(saved_model_path):
+        raise FileNotFoundError(f"SavedModel directory not found: {saved_model_path}")
+
+    # Load SavedModel
     model = tf.saved_model.load(saved_model_path)
-    
-    # Get the serving signature; this is a callable that accepts a dict of inputs.
-    infer = model.signatures["serving_default"]
-    
-    # Determine the input key from the signature.
-    input_key = list(infer.structured_input_signature[1].keys())[0]
-    logging.info(f"Model input key: {input_key}")
-    
-    # Load the test dataset from the "test" folder.
-    test_dir = os.path.join(data_dir, "test")
-    test_dataset = tf.keras.preprocessing.image_dataset_from_directory(
-        test_dir,
-        labels="inferred",
-        label_mode="int",
+    infer = model.signatures.get("serving_default")
+    if infer is None:
+        raise ValueError("SavedModel does not have a 'serving_default' signature.")
+
+    # Prepare test dataset
+    full_test_dir = os.path.join(test_dir, 'test')
+    if not os.path.isdir(full_test_dir):
+        raise FileNotFoundError(f"Test directory not found: {full_test_dir}")
+
+    dataset = tf.keras.preprocessing.image_dataset_from_directory(
+        full_test_dir,
+        labels='inferred',
+        label_mode='int',
         batch_size=batch_size,
         image_size=image_size,
-        shuffle=False  # For reproducible order.
+        shuffle=False
     )
-    class_labels = test_dataset.class_names
-    logging.info(f"Found classes: {class_labels}")
-    
-    # Preprocessing: 
-    # 1. Rescale images from [0, 255] to [0, 1].
-    normalization_layer = tf.keras.layers.Rescaling(1./255)
-    # 2. Transpose images from channels-last (H, W, C) to channels-first (C, H, W).
-    # 3. Normalize using the same mean and std as during training.
-    test_dataset = test_dataset.map(lambda x, y: (
-        normalize_channels_first(tf.transpose(normalization_layer(x), perm=[0, 3, 1, 2])),
-        y
-    ))
-    
-    predictions_list = []
-    ground_truths_list = []
-    
-    logging.info("Running inference on the test dataset using the serving signature...")
-    # Iterate over the dataset and call the signature on each batch.
-    for inputs, labels in tqdm(test_dataset, desc="TF Inference Progress"):
-    # for inputs, labels in test_dataset:
-        # Call the model's serving signature with the proper input key.
-        outputs = infer(**{input_key: inputs})
-        # Assume the first output is the one we need.
-        output_key = list(outputs.keys())[0]
-        batch_predictions = outputs[output_key]
-        predictions_list.append(batch_predictions.numpy())
-        ground_truths_list.append(labels.numpy())
-    
-    # Concatenate all predictions and ground truths.
-    predictions = np.concatenate(predictions_list, axis=0)
-    ground_truths = np.concatenate(ground_truths_list, axis=0)
+    class_names = dataset.class_names
 
-    # Process predictions depending on the number of classes.
-    if len(class_labels) == 2:
-        # For binary classification: apply sigmoid and threshold at 0.5.
-        probs = tf.nn.sigmoid(predictions).numpy()
-        pred_labels = (probs >= 0.5).astype(int).flatten()
-    else:
-        # For multi-class classification: apply softmax and use argmax.
-        probs = tf.nn.softmax(predictions, axis=-1).numpy()
-        pred_labels = np.argmax(probs, axis=-1)
-    
-    # Calculate metrics using your helper function.
-    metrics: dict[str, float] = calculate_metrics(ground_truths, pred_labels, probs)
-    
-    # Print the metrics.
-    print("Metrics Results:")
-    for metric, value in metrics.items():
-        print(f"{metric}: {value:.4f}")
+    # Normalization and channel format conversion
+    def preprocess(batch_x, batch_y):
+        # Rescale to [0,1]
+        x = tf.image.convert_image_dtype(batch_x, tf.float32)
+        # Transpose HWC to CHW
+        x = tf.transpose(x, perm=[0, 3, 1, 2])
+        # Normalize using ImageNet stats
+        mean = tf.constant([0.485, 0.456, 0.406], shape=[1,3,1,1])
+        std = tf.constant([0.229, 0.224, 0.225], shape=[1,3,1,1])
+        x = (x - mean) / std
+        return x, batch_y
 
-    # Generate and save plots if a save directory is provided.
+    dataset = dataset.map(preprocess)
+
+    y_true: List[int] = []
+    y_pred: List[int] = []
+    y_proba: List[List[float]] = []
+
+    # Inference loop
+    for x_batch, y_batch in dataset:
+        inputs = {list(infer.structured_input_signature[1].keys())[0]: x_batch}
+        outputs = infer(**inputs)
+        # Get first output tensor
+        out_tensor = list(outputs.values())[0]
+        logits = out_tensor.numpy()
+
+        # Predictions
+        if logits.ndim == 1 or logits.shape[1] == 1:
+            probs = 1 / (1 + np.exp(-logits))
+            preds = (probs >= 0.5).astype(int).flatten()
+        else:
+            exp = np.exp(logits)
+            probs = exp / np.sum(exp, axis=1, keepdims=True)
+            preds = np.argmax(probs, axis=1)
+
+        y_true.extend(y_batch.numpy().tolist())
+        y_pred.extend(preds.tolist())
+        y_proba.extend(probs.tolist())
+
+    y_true_arr = np.array(y_true)
+    y_pred_arr = np.array(y_pred)
+    y_proba_arr = np.array(y_proba)
+
+    metrics = calculate_metrics(y_true_arr, y_pred_arr, y_proba_arr)
+    metrics['accuracy'] = float((y_pred_arr == y_true_arr).mean())
+    logging.info(f"SavedModel evaluation metrics: {metrics}")
+
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
-        plot_metric_bar(metrics, save_path=os.path.join(save_dir, "metrics_bar_chart.png"))
-        if class_labels:
-            plot_confusion_matrix(
-                y_true=ground_truths,
-                y_pred=pred_labels,
-                labels=class_labels,
-                save_path=os.path.join(save_dir, "confusion_matrix.png")
-            )
-        if probs is not None:
-            plot_roc_auc_curve(ground_truths, probs, save_path=os.path.join(save_dir, "roc_auc_curve.png"))
-        plot_radar_chart(metrics, save_path=os.path.join(save_dir, "radar_chart.png"))
-        logging.info(f"Plots saved to {save_dir}")
+        plot_metric_bar(metrics, title="TF SavedModel Metrics", save_path=os.path.join(save_dir, "tf_metrics.png"))
+        plot_confusion_matrix(y_true_arr, y_pred_arr, labels=class_names, save_path=os.path.join(save_dir, "tf_confusion.png"))
+        plot_radar_chart(metrics, save_path=os.path.join(save_dir, "tf_radar_chart.png"))
+        plot_log_loss(metrics, title="Log Loss over epochs", save_path=os.path.join(save_dir, "tf_log_loss.png"))
+        plot_roc_auc_curve(y_true_arr, y_proba_arr, save_path=os.path.join(save_dir, "tf_roc_auc.png"))
+        plot_calibration_curve(y_true_arr, y_proba_arr, save_path=os.path.join(save_dir, "tf_calibration.png"))
+        logging.info(f"Saved TF SavedModel plots to {save_dir}")
 
-def normalize_channels_first(x: tf.Tensor) -> tf.Tensor:
-    """
-    Normalizes a tensor in channels-first format using the ImageNet mean and std.
-    
-    Args:
-        x (tf.Tensor): Input tensor of shape (batch, 3, height, width) with values in [0, 1].
-    
-    Returns:
-        tf.Tensor: Normalized tensor.
-    """
-    # Define the mean and std as constants.
-    mean = tf.constant([0.485, 0.456, 0.406], shape=(3, 1, 1), dtype=tf.float32)
-    std = tf.constant([0.229, 0.224, 0.225], shape=(3, 1, 1), dtype=tf.float32)
-    return (x - mean) / std
+    return metrics

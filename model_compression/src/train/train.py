@@ -47,7 +47,7 @@ def transfer_learning(
         device: Computation device.
 
     Returns:
-        model: The trained PyTorch model.
+        The trained PyTorch model.
 
     Raises:
         RuntimeError: If training fails or model cannot be saved.
@@ -76,8 +76,8 @@ def transfer_learning(
             learning_rate=learning_rate,
             use_class_weights=use_class_weights,
         )
-    except Exception as error:
-        logging.error(f"Model setup failed: {error}")
+    except Exception as e:
+        logging.error(f"Model setup failed: {e}")
         raise RuntimeError("Failed to setup model.")
     logging.info("Model setup complete.")
 
@@ -175,7 +175,7 @@ def _train_and_evaluate(
         callbacks: List of training callbacks.
 
     Returns:
-        history: Dictionary with lists of training and validation losses.
+        Dictionary with lists of training and validation losses.
     """
     history = {'train': [], 'val': []}
 
@@ -247,11 +247,13 @@ def _train_one_epoch(
         logs: Logging and callback dictionary.
 
     Returns:
-        train_loss: Average training loss for the epoch.
+        Average training loss for the epoch.
     """
     model.train()
-    running_loss, total_samples = 0.0, 0
-    predictions, ground_truths, probabilities = [], [], []
+    total_loss, total_samples = 0.0, 0
+    y_true: List[int] = []
+    y_pred: List[int] = []
+    y_proba: List[List[float]] = []
 
     with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{num_epochs}", leave=False) as pbar:
         for inputs, labels in train_loader:
@@ -265,25 +267,25 @@ def _train_one_epoch(
 
             # Update running loss and sample count
             batch_size = inputs.size(0)
-            running_loss += loss.item() * batch_size
+            total_loss += loss.item() * batch_size
             total_samples += batch_size
 
             # Accumulate predictions and ground truths for metrics
-            ground_truths.extend(labels.cpu().detach().numpy())
-            probabilities.extend(probs.cpu().detach().numpy())
-            predictions.extend(preds.cpu().detach().numpy())
+            y_true.extend(labels.cpu().detach().numpy())
+            y_pred.extend(preds.cpu().detach().numpy())
+            y_proba.extend(probs.cpu().detach().numpy())
             
             # Update progress bar with average loss so far
-            pbar.set_postfix(loss=f"{running_loss / total_samples:.4f}")
+            pbar.set_postfix(loss=f"{total_loss / total_samples:.4f}")
             pbar.update(1)
 
     # Compute aggregated metrics after epoch
-    train_loss = running_loss / total_samples
+    train_loss = total_loss / total_samples
 
     # Calculate metrics
-    y_true, y_pred = np.array(ground_truths), np.array(predictions)
-    y_proba = np.array(probabilities) if probabilities else None
-    metrics = calculate_metrics(y_true, y_pred, y_proba)
+    y_true_arr, y_pred_arr = np.array(y_true), np.array(y_pred)
+    y_proba_arr = np.array(y_proba) if y_proba else None
+    metrics = calculate_metrics(y_true_arr, y_pred_arr, y_proba_arr)
 
     logging.info(f"Train Loss: {train_loss:.4f}")
     logging.info(f"Train Metrics: " + ", ".join([f"{key.lower()}: {value:.4g}" for key, value in metrics.items()]))
@@ -368,7 +370,7 @@ def evaluate_model(model, val_loader) -> float:
         val_loader: DataLoader for the validation set.
 
     Returns:
-        float: Validation accuracy.
+        Validation accuracy.
     """
     model.eval()
     correct = 0

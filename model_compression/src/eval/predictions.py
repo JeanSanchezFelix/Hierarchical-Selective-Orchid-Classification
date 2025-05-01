@@ -1,30 +1,32 @@
 import torch
 import torch.nn as nn
+from typing import Tuple
 
-def _compute_loss_and_predictions(outputs: torch.Tensor,
-                                labels: torch.Tensor,
-                                criterion: nn.Module
-                            ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def _compute_loss_and_predictions(
+    outputs: torch.Tensor,
+    labels: torch.Tensor,
+    criterion: nn.Module
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Computes loss and generates predictions using the provided loss function.
+    Compute loss, predicted probabilities, and predicted labels given model outputs and a loss function.
 
-    For loss functions like BCE/BCELoss, CrossEntropyLoss, or NLLLoss, the appropriate transformation 
-    is applied to the raw outputs to compute both the loss and predicted class labels.
+    Supports BCELoss, BCEWithLogitsLoss, CrossEntropyLoss, and NLLLoss.
 
     Args:
-        outputs (torch.Tensor): Raw model outputs (logits).
-        labels (torch.Tensor): Ground truth labels.
-        criterion (nn.Module): Loss function to use.
+        outputs: Raw model outputs (logits or probabilities).
+        labels: Ground-truth labels (integer class indices or binary labels).
+        criterion: A PyTorch loss module.
 
     Returns:
-        Tuple containing:
-            - loss (torch.Tensor): Computed loss.
-            - probs (torch.Tensor): Predicted probabilities.
-            - preds (torch.Tensor): Final predicted class labels.
-    
+        A tuple of (loss, probabilities, predictions):
+        - loss: Scalar loss tensor.
+        - probabilities: Tensor of predicted probabilities.
+        - predictions: Tensor of class predictions.
+
     Raises:
-        ValueError: If an unsupported loss function is provided.
+        ValueError: If the criterion is not supported.
     """
+    # Binary classification with BCE
     if isinstance(criterion, nn.BCELoss):
         # BCELoss expects probabilities.
         probs = torch.sigmoid(outputs)
@@ -36,7 +38,7 @@ def _compute_loss_and_predictions(outputs: torch.Tensor,
         loss = criterion(outputs, labels.float().unsqueeze(1))
         probs = torch.sigmoid(outputs)
         preds = (probs >= 0.5).float()
-
+    # Multi-class classification
     elif isinstance(criterion, nn.CrossEntropyLoss):
         # CrossEntropyLoss expects raw logits and integer labels.
         loss = criterion(outputs, labels)
@@ -50,23 +52,23 @@ def _compute_loss_and_predictions(outputs: torch.Tensor,
         probs = torch.exp(outputs)
         _, preds = torch.max(outputs, dim=1)
     else:
-        raise ValueError(f"Unsupported loss function: {type(criterion)}")
+        raise ValueError(f"Unsupported loss function: {criterion.__class__.__name__}")
 
     return loss, probs, preds
 
-def _compute_predictions(outputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def _compute_predictions(
+    outputs: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Computes predicted probabilities and class labels solely based on model outputs.
-
-    Determines whether the task is binary or multiclass based on the shape of the outputs.
+    Derive predicted probabilities and labels from raw outputs for binary or multi-class tasks.
 
     Args:
-        outputs (torch.Tensor): Raw model outputs (logits).
+        outputs: Raw model outputs (logits).
 
     Returns:
-        Tuple containing:
-            - probs (torch.Tensor): Predicted probabilities.
-            - preds (torch.Tensor): Final predicted class labels.
+        A tuple of (probabilities, predictions):
+        - probabilities: Tensor of predicted probabilities.
+        - predictions: Tensor of class predictions.
     """
     # Determine if outputs correspond to binary classification.
     is_binary = (outputs.ndim == 1) or (outputs.shape[1] == 1)

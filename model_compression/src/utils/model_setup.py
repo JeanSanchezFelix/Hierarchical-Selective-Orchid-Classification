@@ -28,7 +28,7 @@ def setup_model(
         num_classes: Number of output classes. For binary classification (2), outputs a single logit.
         
     Returns:
-        model: A torchvision model with its classifier head adapted to `num_classes`.
+        A torchvision model with its classifier head adapted to `num_classes`.
     
     Raises:
         ValueError: If `model_name` is not supported.
@@ -128,7 +128,7 @@ def setup_criterion(
         use_class_weights: Whether to apply class weights.
 
     Returns:
-        criterion: A configured PyTorch loss module.
+        A configured PyTorch loss module.
 
     Raises:
         ValueError: If `criterion_name` is unsupported.
@@ -169,7 +169,7 @@ def setup_optimizer(
         learning_rate: Learning rate for the optimizer.
 
     Returns:
-        opt: An instantiated optimizer.
+        An instantiated optimizer.
 
     Raises:
         ValueError: If `optimizer_name` is unsupported.
@@ -214,7 +214,7 @@ def tf_setup(
         use_class_weights: Whether to apply class weights in loss.
 
     Returns:
-        model, criterion, optimizer: A tuple of (model, loss_fn, optimizer).
+        A tuple of (model, criterion, optimizer).
     """
     # Configure model, criterion, and optimizer
     num_classes = len(data_loader.dataset.classes)

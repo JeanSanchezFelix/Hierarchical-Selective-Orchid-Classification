@@ -16,7 +16,7 @@ callbacks/
 
 ## Contents
 
-- [Overview](#overview)
+- [Overview](#modules-overview)
 - [Available Callbacks](#available-callbacks)
   - [Base Class: `Callback`](#base-class-callback)
   - [`ModelCheckpoint`](#modelcheckpoint)
@@ -25,11 +25,10 @@ callbacks/
   - [`LRScheduler`](#lrscheduler)
 - [Callback Registry](#callback-registry)
 - [How to Use](#how-to-use)
-- [Examples](#examples)
 
 ---
 
-## Overview
+## Modules Overview
 
 Callbacks are modular, reusable components that hook into the training loop to perform tasks such as:
 

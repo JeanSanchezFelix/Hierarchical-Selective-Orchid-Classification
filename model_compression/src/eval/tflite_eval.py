@@ -1,61 +1,111 @@
+import os
+import logging
+from typing import Optional, Dict, Any, List, Union
+
 import numpy as np
 from tqdm import tqdm
 
-from model_compression.src.utils.metrics import calculate_metrics, plot_metric_bar, plot_confusion_matrix, plot_roc_auc_curve, plot_radar_chart
+from model_compression.src.utils.metrics import (
+    calculate_metrics,
+    plot_metric_bar,
+    plot_confusion_matrix,
+    plot_roc_auc_curve,
+    plot_radar_chart,
+    plot_calibration_curve,
+    plot_log_loss
+)
 
 try:
     import tensorflow as tf
+    from tensorflow import Tensor
+    from tensorflow.data import Dataset as TFDataset
 except ImportError:
     tf = None
 
-def evaluate_tflite_model(
+def test_inference_tflite(
     tflite_model_path: str,
-    test_dataset: tf.data.Dataset,
-    input_type: tf.dtypes.DType = tf.uint8,
-) -> float:
+    test_dataset: 'TFDataset',
+    input_type: Any = None,
+    save_dir: Optional[str] = None
+) -> Dict[str, float]:
     """
-    Evaluate a TFLite model's accuracy on a test dataset.
+    Run inference with a TFLite model and compute evaluation metrics.
 
     Args:
-        tflite_model_path (str): Path to the .tflite model file.
-        test_dataset (tf.data.Dataset): Dataset yielding (input, label) tuples.
-        input_type (tf.dtypes.DType): Expected input dtype for the model. Defaults to tf.uint8.
+        tflite_model_path: Path to the .tflite file.
+        test_dataset: A tf.data.Dataset yielding (input, label).
+        input_type: Optional TF dtype for inputs (e.g., tf.uint8). If None, infer from interpreter.
+        save_dir: Directory to save plots. If None, no plots are saved.
 
     Returns:
-        float: Classification accuracy (0.0 - 1.0).
+        A dict of metrics including 'accuracy' and, if probabilities available, ROC-AUC.
+
+    Raises:
+        ImportError: If TensorFlow is not installed.
+        FileNotFoundError: If the TFLite model file does not exist.
     """
-    # Load the TFLite model into an interpreter
+    if tf is None:
+        raise ImportError("TensorFlow is required for TFLite evaluation but is not installed.")
+    if not os.path.isfile(tflite_model_path):
+        raise FileNotFoundError(f"TFLite model not found: {tflite_model_path}")
+
     interpreter = tf.lite.Interpreter(model_path=tflite_model_path)
-    # Allocate necessary tensors
     interpreter.allocate_tensors()
-    # Obtain input and output tensor details
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
 
-    correct_predictions = 0
-    total_samples = 0
+    y_true: List[int] = []
+    y_pred: List[int] = []
+    y_proba: List[List[float]] = []
 
-    # Iterate through the test dataset
-    for input_data, label in test_dataset:
-        # Prepare input array with correct dtype
-        array = input_data.numpy() if hasattr(input_data, 'numpy') else np.array(input_data)
-        # Cast to expected numpy dtype
-        array = array.astype(input_type.as_numpy_dtype)
-        # Add batch dimension if missing
+    for batch in test_dataset:
+        inputs, labels = batch
+        array = inputs.numpy() if hasattr(inputs, 'numpy') else np.array(inputs)
+        # Cast and reshape
+        dtype = input_type or input_details[0]['dtype']
+        array = array.astype(dtype.as_numpy_dtype if hasattr(dtype, 'as_numpy_dtype') else dtype)
         if array.ndim == len(input_details[0]['shape']) - 1:
             array = np.expand_dims(array, axis=0)
-        # Set tensor and invoke interpreter
+
         interpreter.set_tensor(input_details[0]['index'], array)
         interpreter.invoke()
-        # Retrieve output and compute predicted label
         output = interpreter.get_tensor(output_details[0]['index'])
-        pred = int(np.argmax(output, axis=-1))
 
-        # Compare prediction to ground-truth
-        true_label = int(label.numpy()) if hasattr(label, 'numpy') else int(label)
-        if pred == true_label:
-            correct_predictions += 1
-        total_samples += 1
+        preds = np.argmax(output, axis=-1).flatten().tolist()
+        y_pred.extend(preds)
+        y_true.extend([int(label.numpy()) if hasattr(label, 'numpy') else int(label) for label in labels])
+        # store probability distribution
+        y_proba.extend(output.tolist())
 
-    # Return accuracy
-    return correct_predictions / total_samples if total_samples else 0.0
+    y_true_arr = np.array(y_true)
+    y_pred_arr = np.array(y_pred)
+    y_proba_arr = np.array(y_proba) if y_proba else None
+
+    metrics = calculate_metrics(y_true_arr, y_pred_arr, y_proba_arr)
+    # accuracy is always present
+    metrics['accuracy'] = float((y_pred_arr == y_true_arr).mean())
+
+    logging.info(f"TFLite evaluation metrics: {metrics}")
+
+    # Save plots if directory provided
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        plot_metric_bar(metrics, title="Test Metrics", save_path=os.path.join(save_dir, "tflite_metrics.png"))
+        plot_confusion_matrix(
+            y_true_arr, y_pred_arr, labels=None,
+            title="Confusion Matrix", save_path=os.path.join(save_dir, "tflite_confusion_matrix.png")
+        )
+        plot_radar_chart(metrics, save_path=os.path.join(save_dir, "tflite_radar_chart.png"))
+        plot_log_loss(metrics, title="Log Loss over epochs", save_path=os.path.join(save_dir, "tflite_log_loss.png"))
+        if y_proba_arr is not None:
+            plot_roc_auc_curve(
+                y_true_arr, y_proba_arr,
+                title="ROC-AUC Curve", save_path=os.path.join(save_dir, "tflite_roc_auc.png")
+            )
+            plot_calibration_curve(
+                y_true_arr, y_proba_arr,
+                title="Calibration Curve", save_path=os.path.join(save_dir, "tflite_calibration.png")
+            )
+        logging.info(f"Saved TFLite evaluation plots to {save_dir}")
+
+    return metrics

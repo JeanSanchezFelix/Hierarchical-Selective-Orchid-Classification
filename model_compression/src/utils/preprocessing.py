@@ -54,7 +54,7 @@ def _log_all_statistics(
     Log statistics for all provided DataLoaders.
 
     Args:
-        loaders: Mapping of split names to DataLoader instances.
+        Mapping of split names to DataLoader instances.
     """
     total = 0
     for label, loader in loaders.items():
@@ -89,7 +89,7 @@ def load_data(
         use_sampler: If True, apply a weighted sampler to the training loader.
 
     Returns:
-        loaders: A dict mapping 'train', 'val', and 'test' to DataLoader objects.
+        A dict mapping 'train', 'val', and 'test' to DataLoader objects.
 
     Raises:
         KeyError: If dataset_name is not in the registry.

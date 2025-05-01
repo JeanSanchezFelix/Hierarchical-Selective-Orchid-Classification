@@ -8,32 +8,29 @@ def representative_data_gen(
     num_samples: int = 100,
 ) -> Iterator[List[tf.Tensor]]:
     """
-    Yield batches from a DataLoader for TFLite post-training calibration.
+    Generate representative samples for TFLite calibration from a PyTorch DataLoader.
+
+    Converts images from CHW PyTorch format to NHWC TensorFlow tensors for quantization calibration.
 
     Args:
-        dataloader (torch.utils.data.DataLoader):
-            PyTorch DataLoader providing (image, label) batches. Images
-            must be in CHW order.
-        num_samples (int):
-            Maximum number of samples to yield in total. Defaults to 100.
+        dataloader: DataLoader yielding (images, labels), where images are CHW tensors.
+        num_samples: Maximum number of samples to yield.
 
     Yields:
-        Iterator[List[tf.Tensor]]:
-            On each iteration yields a single-item list containing a
-            NHWC TensorFlow tensor of one image, dtype tf.float32,
-            ready for calibration.
+        A list containing a single TensorFlow Tensor of shape (1, H, W, C) and dtype float32.
 
     Raises:
-        StopIteration:
-            Once num_samples images have been yielded.
+        StopIteration: When the requested number of samples have been generated.
     """
     yielded = 0
     for images, _ in dataloader:
         for img in images:
             if yielded >= num_samples:
                 return
+            # Convert CHW to HWC numpy array
             arr = img.detach().cpu().numpy()            # (C,H,W)
             arr = np.transpose(arr, (1,2,0)).astype(np.float32)  # (H,W,C)
+            # Create TF tensor with batch dimension
             tf_tensor = tf.expand_dims(tf.convert_to_tensor(arr), 0)  # (1,H,W,C)
             yielded += 1
             yield [tf_tensor]
