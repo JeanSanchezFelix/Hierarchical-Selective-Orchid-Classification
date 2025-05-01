@@ -19,7 +19,6 @@ from model_compression.src.utils.metrics import (
     plot_roc_auc_curve,
     plot_radar_chart,
     plot_calibration_curve,
-    plot_log_loss
 )
 from model_compression.src.eval.predictions import _compute_predictions
 
@@ -70,20 +69,19 @@ def test_inference(
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
 
+            batch_size = inputs.size(0)
+            total_samples += batch_size
+
             # Compute loss
             if criterion:
                 loss = criterion(outputs, labels)
-                total_loss += loss.item() * inputs.size(0)
+                total_loss += loss.item() * batch_size
                 
             probs, preds = _compute_predictions(outputs)
 
-            batch_size = inputs.size(0)
-            total_loss += loss * batch_size
-            total_samples += batch_size
-
-            y_true.extend(labels.cpu().numpy())
-            y_pred.extend(preds.cpu().numpy())
-            y_proba.extend(probs.cpu().numpy())
+            y_true.extend(labels.cpu().detach().numpy())
+            y_pred.extend(preds.cpu().detach().numpy())
+            y_proba.extend(probs.cpu().detach().numpy())
 
     logging.info("Inference complete.")   
 
@@ -104,7 +102,6 @@ def test_inference(
             title="Confusion Matrix", save_path=os.path.join(save_dir, "confusion_matrix.png")
         )
         plot_radar_chart(metrics, save_path=os.path.join(save_dir, "radar_chart.png"))
-        plot_log_loss(metrics, title="Log Loss over epochs", save_path=os.path.join(save_dir, "log_loss.png"))
         if y_proba_arr is not None:
             plot_roc_auc_curve(
                 y_true_arr, y_proba_arr,
@@ -145,7 +142,7 @@ def evaluate(
         raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
     
     # Load metadata
-    metadata = torch.load(metadata_path, map_location=device)
+    metadata = torch.load(metadata_path, map_location=device, weights_only=False)
     criterion = metadata.get('criterion')
     batch_size = metadata.get('batch_size', 32)
 
@@ -174,9 +171,9 @@ def evaluate(
     num_classes = len(classes)
     
     # Instantiate model architecture and load weights
-    base_name = os.path.basename(model_path).split('.')[0]
+    base_name = os.path.basename(model_path).split('.')[0][:-len("_best_model")]
     model = setup_model(base_name, None, num_classes)
-    state_dict = torch.load(model_path, map_location=device)
+    state_dict = torch.load(model_path, map_location=device, weights_only=True)
     model.load_state_dict(state_dict)
     model.to(device)
 

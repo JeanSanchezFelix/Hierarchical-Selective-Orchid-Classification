@@ -97,7 +97,7 @@ def train_kd(
             learning_rate=learning_rate,
             criterion_name=criterion_name,
             optimizer_name=optimizer_name,
-            dataloader=train_loader,
+            data_loader=train_loader,
             class_weights=use_class_weights,
             teacher_model_weights=teacher_weights_path,
             quant_mode=quant_mode,
@@ -335,7 +335,7 @@ def _train_one_epoch_kd(
     y_pred: List[int] = []
     y_proba: List[List[float]] = []
 
-    with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{num_epochs}", leave=False) as pbar:
+    with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{num_epochs}", leave=True) as pbar:
         for inputs, labels in train_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad() # Zero gradients during training

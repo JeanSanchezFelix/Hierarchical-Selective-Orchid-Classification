@@ -96,7 +96,7 @@ def test_inference_tflite(
             title="Confusion Matrix", save_path=os.path.join(save_dir, "tflite_confusion_matrix.png")
         )
         plot_radar_chart(metrics, save_path=os.path.join(save_dir, "tflite_radar_chart.png"))
-        plot_log_loss(metrics, title="Log Loss over epochs", save_path=os.path.join(save_dir, "tflite_log_loss.png"))
+        # plot_log_loss(metrics, title="Log Loss over epochs", save_path=os.path.join(save_dir, "tflite_log_loss.png"))
         if y_proba_arr is not None:
             plot_roc_auc_curve(
                 y_true_arr, y_proba_arr,

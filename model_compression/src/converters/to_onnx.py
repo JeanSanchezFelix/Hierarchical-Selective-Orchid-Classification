@@ -78,7 +78,7 @@ def export_pytorch_to_onnx(
         logging.info(f"Exported model to ONNX at {onnx_file_path}")
     except Exception as e:
         logging.error(f"ONNX export failed: {e}")
-        raise RuntimeError(f"Failed to export to ONNX: {e}") from er
+        raise RuntimeError(f"Failed to export to ONNX: {e}") from e
 
 def export_onnx_to_savedmodel(onnx_path: str, saved_model_dir: str) -> None:
     """
