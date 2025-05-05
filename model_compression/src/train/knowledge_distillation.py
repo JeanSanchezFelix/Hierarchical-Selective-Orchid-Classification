@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import copy
 from typing import Callable, Optional, Any, Dict, List, Tuple
 
 import numpy as np
@@ -159,6 +160,7 @@ def train_kd(
         logging.info(f"Loaded best student model weights from {checkpoint_path}")
     except Exception as e:
         logging.warning(f"Could not load best model weights from {checkpoint_path}: {e}")
+        raise RuntimeError("Could not load best model weights from") from e
 
     # Optional quantization export
     if quant_mode:
@@ -166,11 +168,12 @@ def train_kd(
             student_model = quantize_pytorch_model(
                 model=student_model.cpu(),
                 quant_mode=quant_mode,
-                save_dir=os.path.join(save_dir, "quantized_state.pth")
+                save_path=os.path.join(save_dir, "quantized_state.pth")
             )
             logging.info("Student model quantized for export.")
         except Exception as e:
             logging.warning(f"Quantization failed: {e}")
+            raise RuntimeError("Quantization failed") from e
 
     # Plot training and validation loss curves.
     try:
@@ -181,9 +184,10 @@ def train_kd(
     # If a test set is provided, perform inference evaluation on the quantized student model.
     if "test" in data_loaders:
         try:
-            test_inference(student_model, data_loaders['test'], device, save_dir=metrics_dir)
+            test_inference(model=student_model, data_loader=data_loaders['test'], device=device, save_dir=metrics_dir)
         except Exception as test_error:
             logging.warning(f"Test inference failed: {test_error}")
+            raise RuntimeError("Failed to test inference") from e
 
     return teacher_model, student_model
 
@@ -271,8 +275,20 @@ def _train_and_evaluate_kd(
         )
         history['train'].append(train_loss)
 
-        # Validate
-        val_metrics = test_inference(student, val_loader, device, criterion=criterion, save_dir=None)
+        # Validate 
+        if quant_mode:
+            try:
+                student_copy = copy.deepcopy(student)
+                quantized_for_val = quantize_pytorch_model(
+                    model=student_copy.cpu(),
+                    quant_mode=quant_mode
+                )
+                logging.info("Student model quantized for validation.")
+            except Exception as e:
+                logging.warning(f"Quantization failed for validation: {e}")
+                raise RuntimeError("Quantization failed for validation") from e
+            
+        val_metrics = test_inference(quantized_for_val, val_loader, device, criterion=criterion, save_dir=None)
         val_loss = val_metrics.get("loss", 0.0)
         history['val'].append(val_loss)
 

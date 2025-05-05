@@ -109,6 +109,7 @@ def convert_tensorflow_model_to_tflite(
         logging.info(f"Model converted and saved to {tflite_model_path}")
     except Exception as e:
         logging.info(f"Error converting the model: {e}")
+        raise RuntimeError("Error converting the model") from e
 
 def convert_to_static_quant_tflite(
     saved_model_dir: str,

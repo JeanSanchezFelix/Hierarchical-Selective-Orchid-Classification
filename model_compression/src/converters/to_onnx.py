@@ -6,10 +6,10 @@ import tensorflow as tf
 
 from model_compression.src.quantization.utils.inspect import is_quantized_model
 
-try:
-    from onnx_tf.backend import prepare
-except ImportError:
-    onnx_tf.backend = None 
+# try:
+#     from onnx_tf.backend import prepare
+# except ImportError:
+#     onnx_tf.backend = None 
 
 def export_pytorch_to_onnx(
     model: torch.nn.Module,
