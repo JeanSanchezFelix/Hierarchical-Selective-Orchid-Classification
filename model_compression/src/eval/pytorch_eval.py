@@ -177,5 +177,5 @@ def evaluate(
     model.load_state_dict(state_dict)
     model.to(device)
 
-    metrics = test_inference(model, test_loader, device, criterion, save_dir)
+    metrics = test_inference(model, test_loader, device, save_dir=save_dir)
     logging.info(f"Final evaluation metrics: {metrics}")
