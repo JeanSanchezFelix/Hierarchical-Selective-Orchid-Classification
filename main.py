@@ -46,11 +46,13 @@ def main():
 
     # Step 4: Evaluate models
     logging.info("Starting model evaluation...")
-    evaluate(f"{args['SAVE_DIR']}/{args['MODEL_NAME']}_best_model.pth",
-             f"{args['SAVE_DIR']}/metadata.pth", 
-                args['IMG_SIZE'], args['DATASET'], 
-            f"{args['SAVE_DIR']}"
-    )
+    # evaluate(
+    #     f"{args['SAVE_DIR']}/{args['MODEL_NAME']}_best_model.pth",
+    #     f"{args['SAVE_DIR']}/metadata.pth", 
+    #     args['IMG_SIZE'], 
+    #     args['DATASET'], 
+    #     f"{args['SAVE_DIR']}/metrics"
+    # )
 
 
     logging.info("Training completed successfully.")
