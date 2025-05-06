@@ -4,6 +4,7 @@
 
 # Check if the user provided an input argument.
 if [ "$#" -ne 1 ]; then
+    echo "Error: No tflite model provided"
     echo "Usage: $0 <tflite-model-file>"
     exit 1
 fi

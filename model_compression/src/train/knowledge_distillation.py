@@ -279,7 +279,7 @@ def _train_and_evaluate_kd(
         if quant_mode:
             try:
                 student_copy = copy.deepcopy(student)
-                quantized_for_val = quantize_pytorch_model(
+                student_for_val = quantize_pytorch_model(
                     model=student_copy.cpu(),
                     quant_mode=quant_mode
                 )
@@ -287,8 +287,10 @@ def _train_and_evaluate_kd(
             except Exception as e:
                 logging.warning(f"Quantization failed for validation: {e}")
                 raise RuntimeError("Quantization failed for validation") from e
+        else:
+            student_for_val = student
             
-        val_metrics = test_inference(quantized_for_val, val_loader, device, criterion=criterion, save_dir=None)
+        val_metrics = test_inference(student_for_val, val_loader, device, criterion=criterion, save_dir=None)
         val_loss = val_metrics.get("loss", 0.0)
         history['val'].append(val_loss)
 
