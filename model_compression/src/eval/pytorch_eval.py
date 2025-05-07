@@ -103,12 +103,13 @@ def test_inference(
         )
         plot_radar_chart(metrics, save_path=os.path.join(save_dir, "radar_chart.png"))
         if y_proba_arr is not None:
+            classes = data_loader.dataset.classes
             plot_roc_auc_curve(
-                y_true_arr, y_proba_arr,
+                y_true_arr, y_proba_arr, classes,
                 title="ROC-AUC Curve", save_path=os.path.join(save_dir, "roc_auc.png")
             )
             plot_calibration_curve(
-                y_true_arr, y_proba_arr,
+                y_true_arr, y_proba_arr, classes,
                 title="Calibration Curve", save_path=os.path.join(save_dir, "calibration.png")
             )
         logging.info(f"Saved evaluation plots to {save_dir}")

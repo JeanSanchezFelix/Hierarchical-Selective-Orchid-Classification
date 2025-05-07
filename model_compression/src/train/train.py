@@ -134,7 +134,7 @@ def transfer_learning(
         logging.info(f"Best model weights loaded from: {checkpoint_path}")
     except Exception as e:
         logging.warning(f"Could not load best model weights from {checkpoint_path}: {e}")
-
+    
     # Plot loss curves
     try:
         plot_train_val_curve(history, save_path=os.path.join(metrics_dir, "loss_curve.png"))
