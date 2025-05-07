@@ -87,7 +87,7 @@ def plot_metric_bar(
     metric_values = list(metrics.values())
 
     # Bar plot
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 8))
     color_palette = sns.color_palette("Blues", len(metric_names))  # Different shades of blue
     sns.barplot(x=metric_names, y=metric_values, palette=color_palette, hue=metric_names, legend=False)
 
@@ -202,7 +202,7 @@ def plot_train_val_curve(
         save_path: Path to save the figure.
     """
     
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 8))
     epochs = range(1, len(history['train']) + 1)
 
     # Line plot for training and validation
@@ -253,7 +253,7 @@ def plot_roc_auc_curve(
     spectrum = plt.cm.nipy_spectral(np.linspace(0, 1, num_classes))
     colors = list(spectrum)
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 8))
 
     # Binary classification
     if num_classes == 2:
@@ -338,7 +338,7 @@ def plot_calibration_curve(
     markers = ['o', 's', 'D', 'v', '^', '<', '>', 'p', '*', 'h', '+', 'x', 'd', '|', '_']
 
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 8))
 
     # Binary calibration
     if y_proba.shape[1] == 2 and num_classes == 2:
@@ -398,7 +398,7 @@ def plot_log_loss(
         title: Title of the plot.
         save_path: Optional path to save the plot.
     """
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 8))
     epochs = range(1, len(history['train']) + 1)
     plt.plot(epochs, history['train'], label='Training Log Loss', color='blue')
     plt.plot(epochs, history['val'], label='Validation Log Loss', color='orange')

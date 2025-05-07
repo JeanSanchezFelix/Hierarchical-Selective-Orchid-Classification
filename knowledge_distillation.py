@@ -4,8 +4,7 @@ import argparse
 import torch
 
 from datasets.registry import DATASET_REGISTRY
-from model_compression.src.utils import configure_logging
-from model_compression.src.utils import load_data, process_callbacks
+from model_compression.src.utils import configure_logging, load_data, process_callbacks
 from model_compression.src.train import train_kd 
 
 def parse() -> dict[str, int | str | list]:
@@ -19,7 +18,7 @@ def parse() -> dict[str, int | str | list]:
     # Model and data group
     model_group = parser.add_argument_group("Model Parameters")
     model_group.add_argument("--teacher_name", type=str, default="mobilenet_v2", help="Name of the pre-trained model.")
-    model_group.add_argument("--student_name", type=str, default="mobilenet_v2", help="Name of the pre-trained model.")
+    model_group.add_argument("--model_name", type=str, default="mobilenet_v2", help="Name of the pre-trained model.")
     model_group.add_argument('--teacher_model_weights', type=str, default=None, help='Path to pretrained teacher weights.')
     model_group.add_argument('--dataset', type=str, choices=list(DATASET_REGISTRY.keys()), required=True,
                             help='Dataset that will be used for knowledge distillation.')
@@ -95,7 +94,15 @@ def parse() -> dict[str, int | str | list]:
     config = vars(parser.parse_args())  # type: ignore
 
     # Adjust pre-trained teacher weights
-    config['teacher_model_weights'] = os.path.join(config['save_dir'], config['dataset'], f"{config['teacher_name']}_best_model.pth")
+    config['teacher_model_weights'] = os.path.join(config['save_dir'],
+                                                   config['dataset'],
+                                                   config['model_name'],
+                                                   f"{config['model_name']}_best_model.pth")
+    
+    config['save_dir'] = os.path.join(config['save_dir'],
+                                      config['dataset'],
+                                      config['model_name'])
+    config['save_name'] = 'kd'
 
     # Configure logging
     configure_logging(enable_console=config['logging'], log_dir=config['save_dir'])
@@ -104,7 +111,7 @@ def parse() -> dict[str, int | str | list]:
 
     return {
         'TEACHER_NAME': config['teacher_name'],
-        'STUDENT_NAME': config['student_name'],
+        'STUDENT_NAME': config['model_name'],
         'TEACHER_MODEL_WEIGHTS': config['teacher_model_weights'],
         'DATASET': config['dataset'],
         'EPOCHS': config['epochs'],
@@ -132,11 +139,6 @@ def main():
     data_loaders = load_data(
         dataset_name=args['DATASET'],
         batch_size=args['BATCH_SIZE'],
-        train_split=args['TRAIN_SPLIT'],  
-        test_split=args['TEST_SPLIT'],
-        img_size=args['IMG_SIZE'],  
-        use_augmentation=args['DATA_AUGMENTATION'],
-        use_sampler=args['SAMPLER']
     )
 
     # Step 3: Train a student model with knowledge distillation

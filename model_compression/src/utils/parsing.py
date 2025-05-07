@@ -4,11 +4,11 @@ import json
 import yaml
 import argparse
 import logging
-from typing import Any, Dict, Optional, Union, List
+from typing import Any, Dict
 
 from datasets.registry import DATASET_REGISTRY
-from model_compression.src.utils import process_callbacks
-from model_compression.src.utils import configure_logging
+from model_compression.src.utils.callbacks import process_callbacks
+from model_compression.src.utils.logging_setup import configure_logging
 
 
 def _load_args_from_file(
