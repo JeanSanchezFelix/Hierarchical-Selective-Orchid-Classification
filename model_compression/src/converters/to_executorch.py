@@ -76,7 +76,7 @@ def convert_to_executorch_program(model: torch.nn.Module,
     try:
         aten_graph = torch.export.export(model, example_inputs)
     except Exception as e:
-        logging.error("Failed to export model to ATen dialect: %s", err)
+        logging.error("Failed to export model to ATen dialect: %s", e)
         raise RuntimeError("ATen export failed") from e
 
     if verbose:
@@ -90,7 +90,7 @@ def convert_to_executorch_program(model: torch.nn.Module,
             partitioner=[XnnpackPartitioner()],
         )
     except Exception as e:
-        logging.error("Edge compilation failed: %s", err)
+        logging.error("Edge compilation failed: %s", e)
         raise RuntimeError("Edge compilation failed") from e
 
     if verbose:
@@ -106,7 +106,7 @@ def convert_to_executorch_program(model: torch.nn.Module,
             )
         )
     except Exception as e:
-        logging.error("Conversion to ExecuTorch program failed: %s", err)
+        logging.error("Conversion to ExecuTorch program failed: %s", e)
         raise RuntimeError("ExecuTorch conversion failed") from e
 
     # Step 4: Save program buffer if a path is provided
@@ -116,7 +116,7 @@ def convert_to_executorch_program(model: torch.nn.Module,
             size_mb = os.path.getsize(filename) / 1e6
             logging.info("ExecuTorch program saved as %s (%.2f MB)", filename, size_mb)
         except Exception as e:
-            logging.error("Failed to save ExecuTorch program: %s", err)
+            logging.error("Failed to save ExecuTorch program: %s", e)
             raise RuntimeError(f"Saving .pte file failed: {save_path}") from e
 
     return filename

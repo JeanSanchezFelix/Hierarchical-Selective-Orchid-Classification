@@ -11,7 +11,7 @@ from tqdm import tqdm
 from sklearn.model_selection import KFold
 
 from model_compression.src.utils.callbacks import Callback
-from model_compression.src.utils.metrics import plot_train_val_curve, calculate_metrics
+from model_compression.src.utils.metrics import plot_train_val_curve, plot_log_loss, calculate_metrics
 from model_compression.src.utils.model_setup import tf_setup
 from model_compression.src.eval import test_inference, _compute_loss_and_predictions
 
@@ -134,10 +134,11 @@ def transfer_learning(
         logging.info(f"Best model weights loaded from: {checkpoint_path}")
     except Exception as e:
         logging.warning(f"Could not load best model weights from {checkpoint_path}: {e}")
-
+    
     # Plot loss curves
     try:
         plot_train_val_curve(history, save_path=os.path.join(metrics_dir, "loss_curve.png"))
+        plot_log_loss(history, title="Log Loss over epochs", save_path=os.path.join(metrics_dir, "log_loss.png"))
     except Exception as plot_error:
         logging.warning(f"Failed to plot loss curves: {plot_error}")
 
@@ -146,6 +147,7 @@ def transfer_learning(
             test_inference(model, data_loaders['test'], device, save_dir=metrics_dir)
         except Exception as test_error:
             logging.warning(f"Test inference failed: {test_error}")
+            raise RuntimeError("Failed to test inference") from e
 
     return model
 
@@ -202,6 +204,7 @@ def _train_and_evaluate(
                             num_epochs=num_epochs, 
                             device=device, 
                             logs=logs)
+        
         history['train'].append(train_loss)  
 
         # Validate
@@ -255,7 +258,7 @@ def _train_one_epoch(
     y_pred: List[int] = []
     y_proba: List[List[float]] = []
 
-    with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{num_epochs}", leave=False) as pbar:
+    with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{num_epochs}", leave=True) as pbar:
         for inputs, labels in train_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad() # Zero gradients during training
@@ -291,98 +294,3 @@ def _train_one_epoch(
     logging.info(f"Train Metrics: " + ", ".join([f"{key.lower()}: {value:.4g}" for key, value in metrics.items()]))
     logs.update({f"train_loss": train_loss, **{f"train_{key.lower()}": value for key, value in metrics.items()}})
     return train_loss
-
-# TODO: Work in progress (finish)
-
-def cross_validation(
-    model_name: str,
-    dataset,
-    k_folds: int,
-    save_dir: str,
-    learning_rate: float = 0.001,
-    epochs: int = 5,
-    criterion: str = "cross_entropy",
-    optimizer: str = "adam",
-    pretrained_weights: str = None,
-    freeze_base: bool = True
-) -> None:
-    """
-    Perform k-fold cross-validation for a given model and dataset.
-
-    Args:
-        model_name (str): Name of the pre-trained model.
-        dataset: The dataset to be split for cross-validation.
-        k_folds (int): Number of folds for cross-validation.
-        save_dir (str): Directory to save the models and results.
-        learning_rate (float): Learning rate for the optimizer.
-        epochs (int): Number of epochs to train for each fold.
-        criterion (str): Loss function.
-        optimizer (str): Optimizer type.
-        pretrained_weights (str): Path to pre-trained weights, if any.
-        freeze_base (bool): Whether to freeze base model layers during training.
-    """
-    logging.info(f"Starting {k_folds}-fold cross-validation...")
-
-    kfold = KFold(n_splits=k_folds, shuffle=True)
-    fold_results = []
-
-    os.makedirs(save_dir, exist_ok=True)
-
-    for fold, (train_idx, val_idx) in enumerate(kfold.split(dataset)):
-        logging.info(f"Processing fold {fold + 1}/{k_folds}")
-
-        # Create data loaders for the current fold
-        train_subset = Subset(dataset, train_idx)
-        val_subset = Subset(dataset, val_idx)
-        train_loader = DataLoader(train_subset, batch_size=32, shuffle=True)
-        val_loader = DataLoader(val_subset, batch_size=32, shuffle=False)
-        data_loaders = {"train": train_loader, "val": val_loader}
-
-        # Train model for the current fold
-        model = train_models(
-            model_name=model_name,
-            data_loaders=data_loaders,
-            save_dir=os.path.join(save_dir, f"fold_{fold + 1}"),
-            learning_rate=learning_rate,
-            epochs=epochs,
-            criterion=criterion,
-            optimizer=optimizer,
-            pretrained_weights=pretrained_weights,
-            freeze_base=freeze_base,
-        )
-
-        # Evaluate model performance on validation set
-        fold_accuracy = evaluate_model(model, val_loader)
-        fold_results.append(fold_accuracy)
-        logging.info(f"Fold {fold + 1} accuracy: {fold_accuracy:.4f}")
-
-    # Summarize results
-    mean_accuracy = sum(fold_results) / k_folds
-    logging.info(f"Cross-validation complete. Mean accuracy: {mean_accuracy:.4f}")
-
-
-def evaluate_model(model, val_loader) -> float:
-    """
-    Evaluate the model on the validation set.
-
-    Args:
-        model: Trained model.
-        val_loader: DataLoader for the validation set.
-
-    Returns:
-        Validation accuracy.
-    """
-    model.eval()
-    correct = 0
-    total = 0
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    with torch.no_grad():
-        for inputs, labels in val_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            _, preds = torch.max(outputs, 1)
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
-
-    return correct / total

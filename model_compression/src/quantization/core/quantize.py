@@ -116,12 +116,15 @@ def post_training_quantization_pytorch_model(
     # Convert the prepared model to a quantized model
     quantized_model = convert_pt2e(pt2e_torch_model, fold_quantize=False)
 
+    # Create a quantization configuration
+    quant_config = QuantConfig(pt2e_quantizer=pt2e_quantizer)
+
     # Convert to an ai_edge_torch model (Export edge model)
     try:
         edge_model = ai_edge_torch.convert(
             quantized_model,
             example_inputs,
-            quant_config=QuantConfig(pt2e_quantizer=pt2e_quantizer)
+            quant_config=quant_config
         )
     except Exception as e:
         logging.error(f"ai_edge_torch conversion failed: {e}")

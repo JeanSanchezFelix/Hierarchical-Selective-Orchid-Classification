@@ -1,17 +1,12 @@
 import logging
+
 from model_compression.src.utils import parse, load_data
 from model_compression.src.train import transfer_learning 
 from model_compression.src.eval.pytorch_eval import evaluate
 
-# Add the root directory to sys.path to access datasets
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-
-# # Add the src directory to sys.path to access utils
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 def main():
     """
-    Main function for parsing, data preprocessing, and model training.
+    Main function for performing transfer learning
     """
     # Step 1: Parse the command-line arguments or configuration file
     logging.info("Parsing arguments...")
@@ -44,13 +39,15 @@ def main():
         use_class_weights=args['CLASS_WEIGHTS']
     )
 
-    # Step 4: Evaluate models
-    logging.info("Starting model evaluation...")
-    evaluate(f"{args['SAVE_DIR']}/{args['MODEL_NAME']}_best_model.pth",
-             f"{args['SAVE_DIR']}/metadata.pth", 
-                args['IMG_SIZE'], args['DATASET'], 
-            f"{args['SAVE_DIR']}"
-    )
+    # # Step 4: Evaluate models
+    # logging.info("Starting model evaluation...")
+    # evaluate(
+    #     f"{args['SAVE_DIR']}/{args['MODEL_NAME']}_best_model.pth",
+    #     f"{args['SAVE_DIR']}/metadata.pth", 
+    #     args['IMG_SIZE'], 
+    #     args['DATASET'], 
+    #     f"{args['SAVE_DIR']}/metrics"
+    # )
 
 
     logging.info("Training completed successfully.")

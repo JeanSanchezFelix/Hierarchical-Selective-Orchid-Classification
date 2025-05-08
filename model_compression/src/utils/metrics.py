@@ -40,7 +40,7 @@ def calculate_metrics(
         A dict mapping metric names to their values.
     """
     # Determine whether the task is binary or multiclass.
-    num_classes = len(set(y_true))
+    num_classes = len(np.unique(y_true))
     average = 'binary' if num_classes == 2 else 'macro'
 
     metrics = {
@@ -87,7 +87,7 @@ def plot_metric_bar(
     metric_values = list(metrics.values())
 
     # Bar plot
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 8))
     color_palette = sns.color_palette("Blues", len(metric_names))  # Different shades of blue
     sns.barplot(x=metric_names, y=metric_values, palette=color_palette, hue=metric_names, legend=False)
 
@@ -202,7 +202,7 @@ def plot_train_val_curve(
         save_path: Path to save the figure.
     """
     
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 8))
     epochs = range(1, len(history['train']) + 1)
 
     # Line plot for training and validation
@@ -222,6 +222,7 @@ def plot_train_val_curve(
 def plot_roc_auc_curve(
     y_true: Union[List[int], np.ndarray],
     y_proba: np.ndarray,
+    class_names: Optional[List[str]] = None,
     title: str = 'ROC AUC Curve',
     save_path: Optional[str] = None
 ) -> None:
@@ -231,27 +232,58 @@ def plot_roc_auc_curve(
     Args:
         y_true: True class labels.
         y_proba: Predicted probabilities array of shape (n_samples, n_classes).
+        class_names: Optional list of class names corresponding to integer labels.
+            If provided, length must equal number of unique classes. Defaults to None.
         title: Plot title.
         save_path: Path to save the figure.
     """
     # Determine if the problem is binary or multiclass
-    num_classes = len(set(y_true))
+    classes = np.unique(y_true)
+    num_classes = len(classes)
 
-    plt.figure(figsize=(10, 6))
-
-    # Binary Classification
-    if num_classes == 2:
-        fpr, tpr, _ = roc_curve(y_true, y_proba[:, 1])  # Get FPR and TPR
-        roc_auc = auc(fpr, tpr)  # Compute AUC
-        plt.plot(fpr, tpr, color='blue', lw=2, label=f"ROC curve (AUC = {roc_auc:.2f})")
-
-    # Multiclass Classification
+    # Validate class_names
+    if class_names is not None:
+        if len(class_names) != num_classes:
+            raise ValueError(
+                f"Length of class_names ({len(class_names)}) must match number of classes ({num_classes})"
+            )
     else:
-        y_true_bin = label_binarize(y_true, classes=list(range(num_classes)))  # Convert labels to one-hot
+        class_names = [str(cls) for cls in classes]
+
+    spectrum = plt.cm.nipy_spectral(np.linspace(0, 1, num_classes))
+    colors = list(spectrum)
+
+    plt.figure(figsize=(10, 8))
+
+    # Binary classification
+    if num_classes == 2:
+        # Check proba shape
+        if y_proba.shape[1] != 2:
+            raise ValueError(f"Expected y_proba with shape (*, 2) for binary, got {y_proba.shape}")
+        fpr, tpr, _ = roc_curve(y_true, y_proba[:, 1])
+        roc_auc = auc(fpr, tpr)
+        plt.plot(
+            fpr, tpr,
+            color=colors[1],
+            lw=2,
+            llabel=f"{class_names[1]} (AUC = {roc_auc:.2f})"
+        )
+    else:
+        # Multiclass: binarize and plot per class
+        y_true_bin = label_binarize(y_true, classes=classes)
+        if y_proba.shape[1] != num_classes:
+            raise ValueError(
+                f"Expected y_proba with shape (*, {num_classes}), got {y_proba.shape}"
+            )
         for i in range(num_classes):
             fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_proba[:, i])
             roc_auc = auc(fpr, tpr)
-            plt.plot(fpr, tpr, lw=2, label=f"Class {i} (AUC = {roc_auc:.2f})")
+            plt.plot(
+                fpr, tpr,
+                color=colors[i],
+                lw=2,
+                label=f"{class_names[i]} (AUC = {roc_auc:.2f})"
+            )
 
     # Plot formatting
     plt.plot([0, 1], [0, 1], linestyle="--", color="gray", lw=2)  # Diagonal line
@@ -271,6 +303,7 @@ def plot_roc_auc_curve(
 def plot_calibration_curve(
     y_true: Union[List[int], np.ndarray],
     y_proba: np.ndarray,
+    class_names: Optional[List[str]] = None,
     n_bins: int = 10,
     title: str = "Calibration Curve",
     save_path: Optional[str] = None):
@@ -280,24 +313,63 @@ def plot_calibration_curve(
     Args:
         y_true: Ground truth binary labels.
         y_proba: Predicted probabilities (assumes binary classification).
+        class_names: Optional list of class names corresponding to integer labels.
+            If provided, length must equal number of unique classes. Defaults to None.
         n_bins: Number of bins to divide probability range [0, 1].
         title: Title of the plot.
         save_path: Optional path to save the plot.
     """
-    num_classes = y_proba.shape[1]
+    classes = np.unique(y_true)
+    num_classes = len(classes)
 
-    plt.figure(figsize=(8, 6))
-
-    if num_classes == 2:
-        # Binary classification (assume positive class is class 1)
-        prob_true, prob_pred = calibration_curve(y_true, y_proba[:, 1], n_bins=n_bins)
-        plt.plot(prob_pred, prob_true, marker='o', label='Class 1')
+    # Validate class_names
+    if class_names is not None:
+        if len(class_names) != num_classes:
+            raise ValueError(
+                f"Length of class_names ({len(class_names)}) must match number of classes ({num_classes})"
+            )
     else:
-        # Multiclass: use one-vs-rest calibration for each class
-        y_true_bin = label_binarize(y_true, classes=np.arange(num_classes))
-        for class_idx in range(num_classes):
-            prob_true, prob_pred = calibration_curve(y_true_bin[:, class_idx], y_proba[:, class_idx], n_bins=n_bins)
-            plt.plot(prob_pred, prob_true, marker='o', label=f"Class {class_idx}")
+        class_names = [str(cls) for cls in classes]
+
+    spectrum = plt.cm.nipy_spectral(np.linspace(0, 1, num_classes))
+    colors = list(spectrum)
+
+    # Define marker and line style cycles to ensure distinct shapes
+    markers = ['o', 's', 'D', 'v', '^', '<', '>', 'p', '*', 'h', '+', 'x', 'd', '|', '_']
+
+
+    plt.figure(figsize=(10, 8))
+
+    # Binary calibration
+    if y_proba.shape[1] == 2 and num_classes == 2:
+        prob_true, prob_pred = calibration_curve(y_true, y_proba[:, 1], n_bins=n_bins)
+        plt.plot(
+            prob_pred, prob_true,
+            marker=markers[0],
+            linestyle='-',
+            lw=2,
+            label=class_names[i],
+            color=colors[i]
+        )
+    else:
+        # Multiclass one-vs-rest calibration
+        y_true_bin = label_binarize(y_true, classes=classes)
+        if y_proba.shape[1] != num_classes:
+            raise ValueError(
+                f"Expected y_proba with shape (*, {num_classes}), got {y_proba.shape}"
+            )
+        for i in range(num_classes):
+            prob_true, prob_pred = calibration_curve(
+                y_true_bin[:, i], y_proba[:, i], n_bins=n_bins
+            )
+            plt.plot(
+                prob_pred, prob_true,
+                marker=markers[i % len(markers)],
+                linestyle='-',
+                lw=2,
+                label=class_names[i],
+                color=colors[i]
+            )
 
     # Plot reference line
     plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label='Perfect Calibration')
@@ -326,7 +398,7 @@ def plot_log_loss(
         title: Title of the plot.
         save_path: Optional path to save the plot.
     """
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 8))
     epochs = range(1, len(history['train']) + 1)
     plt.plot(epochs, history['train'], label='Training Log Loss', color='blue')
     plt.plot(epochs, history['val'], label='Validation Log Loss', color='orange')

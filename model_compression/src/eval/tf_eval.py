@@ -125,7 +125,7 @@ def test_inference_savedmodel(
         plot_metric_bar(metrics, title="TF SavedModel Metrics", save_path=os.path.join(save_dir, "tf_metrics.png"))
         plot_confusion_matrix(y_true_arr, y_pred_arr, labels=class_names, save_path=os.path.join(save_dir, "tf_confusion.png"))
         plot_radar_chart(metrics, save_path=os.path.join(save_dir, "tf_radar_chart.png"))
-        plot_log_loss(metrics, title="Log Loss over epochs", save_path=os.path.join(save_dir, "tf_log_loss.png"))
+        # plot_log_loss(metrics, title="Log Loss over epochs", save_path=os.path.join(save_dir, "tf_log_loss.png"))
         plot_roc_auc_curve(y_true_arr, y_proba_arr, save_path=os.path.join(save_dir, "tf_roc_auc.png"))
         plot_calibration_curve(y_true_arr, y_proba_arr, save_path=os.path.join(save_dir, "tf_calibration.png"))
         logging.info(f"Saved TF SavedModel plots to {save_dir}")
