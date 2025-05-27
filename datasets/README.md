@@ -5,6 +5,7 @@ The `datasets` module provides dataset classes for loading and preprocessing ima
 ---
 
 ## Folder Structure
+
 ```
 datasets/
 ├── __init__.py
@@ -12,6 +13,7 @@ datasets/
 ├── MonkeypoxDataset.py
 ├── registry.py
 ├── SkinCancerDataset.py
+├── TaxonomicOrchidDataset.py
 ```
 
 ## Contents
@@ -21,6 +23,7 @@ datasets/
   - [CpAnemiaDataset](#cpanemiadataset)
   - [MonkeypoxDataset](#monkeypoxdataset)
   - [SkinCancerDataset](#skincancerdataset)
+  - [TaxonomicOrchidDataset](#taxonomicorchiddataset)
 - [Dataset Registry](#dataset-registry)
 - [How to Use](#how-to-use)
 - [Examples](#examples)
@@ -30,6 +33,7 @@ datasets/
 ## Overview of Datasets Module
 
 The `datasets` module includes classes for handling:
+
 - Loading image datasets from specified directories.
 - Transforming datasets for preprocessing (e.g., resizing, normalization).
 - Supporting train, validation, and test splits for structured datasets.
@@ -45,10 +49,12 @@ The `datasets` module includes classes for handling:
 Handles the Cp-Anemia dataset, which is stored under `data/cp-anemia/download/`.
 
 #### Features:
+
 - Supports preprocessing transformations via `transform`.
 - Provides class-to-index mappings (`class_to_idx`).
 
 #### Methods:
+
 - `__len__`: Returns the size of the dataset.
 - `__getitem__`: Fetches a specific data sample by index.
 - `getName`: Returns the name of the dataset.
@@ -56,6 +62,7 @@ Handles the Cp-Anemia dataset, which is stored under `data/cp-anemia/download/`.
 
 #### Tests:
 The `TestCpAnemiaDataset` class validates:
+
 - Total number of images.
 - Number of classes.
 - Class-wise image counts.
@@ -65,21 +72,26 @@ The `TestCpAnemiaDataset` class validates:
 ### `MonkeypoxDataset`
 
 #### Description:
+
 Handles the Monkeypox dataset, which is stored under `data/monkeypox/download/`.
 
 #### Features:
+
 - Supports train and test modes via the `mode` parameter.
 - Applies preprocessing transformations through `transform`.
 - Provides class-to-index mappings (`class_to_idx`).
 
 #### Methods:
+
 - `__len__`: Returns the size of the dataset.
 - `__getitem__`: Fetches a specific data sample by index.
 - `getName`: Returns the name of the dataset.
 - `getDir`: Returns the root directory of the dataset.
 
 #### Tests:
+
 The `TestMonkeypoxDataset` class validates:
+
 - Total number of images in train and test splits.
 - Number of classes.
 - Class-wise image counts for both train and test splits.
@@ -89,23 +101,59 @@ The `TestMonkeypoxDataset` class validates:
 ### `SkinCancerDataset`
 
 #### Description:
+
 Handles the Skin Lesions dataset, stored under `data/skin-lesions/download/`.
 
 #### Features:
+
 - Supports train, validation, and test modes via the `mode` parameter.
 - Applies preprocessing transformations through `transform`.
 - Provides class-to-index mappings (`class_to_idx`).
 
 #### Methods:
+
 - `__len__`: Returns the size of the dataset.
 - `__getitem__`: Fetches a specific data sample by index.
 - `getName`: Returns the name of the dataset.
 - `getDir`: Returns the root directory of the dataset.
 
 #### Tests:
+
 The `TestSkinCancerDataset` class validates:
+
 - Total number of images for train, validation, and test splits.
 - Number of classes (14).
+- Class-wise image counts for each split.
+
+---
+
+### `TaxonomicOrchidDataset`
+
+#### Description:
+
+Handles the Taxonomic Orchid dataset, stored under `data/taxonomic-orchid/download/`.
+
+#### Features:
+
+- Supports train, validation, and test modes via the `mode` parameter.
+- Applies preprocessing transformations through `transform`.
+- Provides class-to-index mappings (`class_to_idx`).
+- Dynamically organizes the data via Genus/Species or Species-only for multi-class classification.
+
+#### Methods:
+
+- `__len__`: Returns the size of the dataset.
+- `__getitem__`: Fetches a specific data sample by index.
+- `getName`: Returns the name of the dataset.
+- `getDir`: Returns the root directory of the dataset.
+- `getLabels`: Returns a hashmap of all genera with their respective species.
+
+#### Tests:
+
+The `TestTaxonomicOrchidDataset` class validates:
+
+- Total number of images for train, validation, and test splits.
+- Number of classes.
 - Class-wise image counts for each split.
 
 ---
@@ -116,11 +164,12 @@ The `registry.py` file provides a `DATASET_REGISTRY`, which maps dataset names t
 
 ### `DATASET_REGISTRY`
 
-| Dataset Name | Class             |
-|--------------|-------------------|
-| `CpAnemia`   | `CpAnemiaDataset` |
-| `MonkeyPox`  | `MonkeypoxDataset`|
-| `SkinCancer` | `SkinCancerDataset`|
+| Dataset Name       | Class                     |
+|--------------------|---------------------------|
+| `CpAnemia`         | `CpAnemiaDataset`         |
+| `MonkeyPox`        | `MonkeypoxDataset`        |
+| `SkinCancer`       | `SkinCancerDataset`       |
+| `TaxonomicOrchid`  | `TaxonomicOrchidDataset`  |
 
 ---
 
@@ -129,12 +178,14 @@ The `registry.py` file provides a `DATASET_REGISTRY`, which maps dataset names t
 ### Example: Loading a Dataset
 
 1. Import the dataset:
+
    ```python
    from datasets import CpAnemiaDataset
    from torchvision import transforms
    ```
 
 2. Define preprocessing transformations:
+
    ```python
    transform = transforms.Compose([
        transforms.Resize((224, 224)),
@@ -144,11 +195,13 @@ The `registry.py` file provides a `DATASET_REGISTRY`, which maps dataset names t
    ```
 
 3. Load the dataset:
+
    ```python
    dataset = CpAnemiaDataset(transform=transform)
    ```
 
 4. Use with a DataLoader:
+
    ```python
    from torch.utils.data import DataLoader
 
@@ -158,11 +211,13 @@ The `registry.py` file provides a `DATASET_REGISTRY`, which maps dataset names t
 ### Example: Using the Dataset Registry
 
 1. Import the registry:
+
    ```python
    from datasets.registry import DATASET_REGISTRY
    ```
 
 2. Instantiate a dataset using the registry:
+
    ```python
    dataset_class = DATASET_REGISTRY["CpAnemia"]
    dataset = dataset_class(transform=transform)
@@ -171,4 +226,3 @@ The `registry.py` file provides a `DATASET_REGISTRY`, which maps dataset names t
 ---
 
 For more details, refer to the source code in the `datasets` folder.
-
