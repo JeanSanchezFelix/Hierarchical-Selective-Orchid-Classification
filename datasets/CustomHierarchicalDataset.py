@@ -155,16 +155,16 @@ class HierarchicalDataset(Dataset):
     def __init__(
         self,
         root_dir: str,
-        transform,
+        transform=None,
         hierarchical_class_mode=True,
         use_minority_augmentation=False,
         minority_threshold=1000,
         aug_prob=0.5,
     ):
-        dataset = HierarchicalImageFolder(root_dir, transform, hierarchical_class_mode)
-        self.targets = np.array(dataset.targets)
-        self.class_to_idx = dataset.class_to_idx
-        self.classes = dataset.classes
+        self.dataset = HierarchicalImageFolder(root_dir, transform, hierarchical_class_mode)
+        self.targets = np.array(self.dataset.targets)
+        self.class_to_idx = self.dataset.class_to_idx
+        self.classes = self.dataset.classes
         self.aug_prob = aug_prob
 
         if use_minority_augmentation:
