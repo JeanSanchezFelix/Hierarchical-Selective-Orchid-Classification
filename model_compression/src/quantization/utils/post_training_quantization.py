@@ -1,63 +1,95 @@
 import torch
 import torch.nn as nn
 import torch.ao.ns._numeric_suite_fx as ns
-import matplotlib as plt
+from typing import List, Any
 
-def debug_quantized_model(original_model: nn.Module, quantized_model: nn.Module) -> list[int]:
+import matplotlib.pyplot as plt
+
+def debug_quantized_model(
+    original_model: nn.Module,
+    quantized_model: nn.Module
+) -> List[float]:
     """
-    Comparing Weights Using the Numeric Suite.
-    
-    Parameters:
-        original_model (nn.Module): The original model to comapre to.
-        quantized_model (nn.Module): The quantized model to inspect.
+    Compare weights between float and quantized models using Numeric Suite and compute SQNR.
+
+    Args:
+        original_model: The original float PyTorch model.
+        quantized_model: The quantized PyTorch model to inspect.
+
+    Returns:
+        List of SQNR (Signal-to-Quantization-Noise Ratio) values for each weight tensor.
+
+    Raises:
+        RuntimeError: If weight extraction or SQNR computation fails.
     """
-    print("Debugging quantized model parameters:")
+    logging_prefix = "[Numeric Suite]"
+    print(f"{logging_prefix} Debugging quantized model parameters...")
 
-    # Extract weight pairs between the original (float) and quantized models.
-    # Here we label the weights from the float model as 'float' and from the quantized model as 'quantized'.
-    weight_comparison = ns.extract_weights('float', original_model, 'quantized', quantized_model)
+    try:
+        # Extract weight pairs between the original (float) and quantized models.
+        # Here we label the weights from the float model as 'float' and from the quantized model as 'quantized'.
+        weight_comp = ns.extract_weights(
+            'float', original_model,
+            'quant', quantized_model
+        )
+         # Extend the comparison dictionary by computing the SQNR (Signal-to-Quantization-Noise Ratio)
+        ns.extend_logger_results_with_comparison(
+            weight_comp,
+            'float', 'quant',
+            ns.utils.compute_sqnr,
+            'sqnr'
+        )
+    except Exception as e:
+        raise RuntimeError(f"Failed numeric suite weight comparison: {e}") from e
 
-    # Extend the comparison dictionary by computing the SQNR (Signal-to-Quantization-Noise Ratio)
-    ns.extend_logger_results_with_comparison(
-        weight_comparison, 'float', 'quantized', torch.ao.ns.fx.utils.compute_sqnr, 'sqnr'
-    )
+    sqnr_values: List[float] = []
+    print(f"{logging_prefix} Weight Comparison (SQNR):")
+    for name, comp in weight_comp.items():
+        try:
+            sqnr_entry = comp['weight']['quant'][0]['sqnr']
+            sqnr_val = float(sqnr_entry)
+        except Exception:
+            sqnr_val = float('nan')
+        sqnr_values.append(sqnr_val)
+        print(f"  {name}: SQNR = {sqnr_val}")
 
-    sqnr_list = []
+    return sqnr_values
 
-    # Now, print the SQNR values for each weight pair for inspection.
-    print("Weight Comparison (SQNR):")
-    for name, comp in weight_comparison.items():
-        # Each 'comp' contains entries for both sides and the computed SQNR.
-        sqnr = comp['weight']['quantized'][0].get('sqnr', 'N/A')
-        sqnr_list.append(sqnr[0])
-        print(f"{name}: SQNR = {sqnr}")
 
-    return sqnr_list
+def plot_sqnr(
+    xdata: List[Any],
+    ydata: List[float],
+    xlabel: str,
+    ylabel: str,
+    title: str
+) -> None:
+    """
+    Plot SQNR values against a given x-axis data list.
 
-def plot_sqnr(xdata, ydata, xlabel, ylabel, title):
-    # Create the plot
-    fig = plt.figure(figsize=(10, 5))
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.title(title)
-    
-    # Use plt.gca() to get the current axes (which uses data coordinates)
-    ax = plt.gca()
+    Args:
+        xdata: List of x-axis values (e.g., layer indices).
+        ydata: Corresponding SQNR values.
+        xlabel: Label for the x-axis.
+        ylabel: Label for the y-axis.
+        title: Plot title.
 
-    # Plot xdata vs ydata
-    ax.plot(xdata, ydata)
+    Raises:
+        ValueError: If xdata and ydata lengths mismatch or are empty.
+    """
+    if not xdata or not ydata or len(xdata) != len(ydata):
+        raise ValueError("xdata and ydata must be non-empty lists of equal length.")
 
-    print(min(ydata))
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(xdata, ydata, marker='o')
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
 
-    # Set the x and y axis limits to their respective min and max values
-    ax.set_xlim([min(xdata)-1, max(xdata)+1])
-    ax.set_ylim([min(ydata)-1, max(ydata)+1])
+    # Set axis limits with margins
+    ax.set_xlim(min(xdata) - 1, max(xdata) + 1)
+    ax.set_ylim(min(ydata) - 1, max(ydata) + 1)
 
-    # Set the x and y ticks to increment by 1
-    ax.set_xticks(range(min(xdata), max(xdata), 2))  # Set x ticks from min to max with step 2
-    # ax.set_yticks(range(min(ydata), max(ydata) + 1, 5))  # Set y ticks from min to max with step 1
-
+    # Configure ticks
+    ax.set_xticks(xdata)
     plt.tight_layout()
-
-    # Show the plot
     plt.show()

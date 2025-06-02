@@ -18,13 +18,17 @@ def save_pte_program(
     Writes an ExecuTorch program to disk as a .pte file.
 
     Args:
-        prog (ExecutorchProgramManager): The compiled ExecuTorch program.
-        model_name (str): Base filename (with or without .pte extension).
-        output_dir (str): Directory to save into. Defaults to current working dir.
+    program: ExecutorchProgramManager instance representing compiled program.
+    model_name: Base filename (with or without '.pte').
+    output_dir: Directory to save file; defaults to current directory.
 
     Returns:
-        str: Full path to the written .pte file.
-    """
+        The full path to the saved .pte file.
+
+    Raises:
+        FileNotFoundError: If output directory does not exist and cannot be created.
+        IOError: If writing to file fails.
+"""
     if model_name.endswith(".pte"):
         filename = model_name
     else:
@@ -34,8 +38,8 @@ def save_pte_program(
             prog.write_to_file(f)
         logging.info("Saved exported program to %s", filename)
     except Exception as e:
-        logging.error("Error while saving to %s: %s", filename, e)
-        raise
+        logging.error(f"Failed to save .pte file '{filename}': {e}")
+        raise IOError(f"Could not write .pte file: {filename}") from e
     return filename
 
 
@@ -47,20 +51,20 @@ def convert_to_executorch_program(model: torch.nn.Module,
     """
     Converts a PyTorch model into an ExecuTorch program and optionally saves it as a .pte file.
 
-    This function performs the following steps:
-    1. Exports the PyTorch model to the ATen dialect using Torch Export API.
-    2. Applies edge-specific optimizations and lowering via ExecuTorch utilities.
-    3. Converts the optimized program into an ExecuTorch "pte" format.
-    4. Writes the resulting program buffer to disk if a save path is provided.
+    Steps:
+    1. Export PyTorch model to ATen IR.
+    2. Apply edge-specific transforms and lowering.
+    3. Lower to ExecuTorch program.
+    4. Save .pte file if save_path is provided.
 
     Args:
-        model (torch.nn.Module): The trained PyTorch model to convert.
-        example_inputs (Tuple[torch.Tensor, ...]): Input tensors for tracing during export.
-        save_path (Optional[str]): File path where the .pte ExecuTorch program will be saved. Default is "model.pte".
-        verbose (bool): If True, prints intermediate graph representations to stdout.
+        model: PyTorch model to convert (should be in eval mode).
+        example_inputs: Sample inputs for tracing export.
+        save_path: File path for .pte output; if None, program is not saved.
+        verbose: If True, print intermediate IR representations.
 
     Returns:
-        ExecuTorchProgram: The compiled ExecuTorch program object.
+        Path to the saved .pte file.
 
     Raises:
         RuntimeError: If any stage of conversion fails.
@@ -132,12 +136,12 @@ def convert_quantized_to_edge_pte(
     4. Writes the resulting ExecuTorch program to disk if a save path is provided.
 
     Args:
-        quantized_model (torch.nn.Module): Quantized PyTorch model to compile.
-        example_inputs (Tuple[torch.Tensor, ...]): Example input(s) for tracing.
-        save_path (Optional[str]): Path where the .pte file will be saved.
+        quantized_model: Quantized PyTorch model.
+        example_inputs: Sample inputs for tracing.
+        save_path: Output file path for .pte program.
 
     Returns:
-        str: Filename of the saved .pte program.
+        Path to saved .pte file.
 
     Raises:
         RuntimeError: If any compilation or saving step fails.

@@ -4,7 +4,8 @@ import random
 import subprocess
 import threading
 import logging
-import pandas as pd
+from typing import Tuple, Optional, List, Dict
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -14,55 +15,60 @@ from model_compression.src.quantization.utils.inspect import is_quantized_model
 try:
     import psutil
 except ImportError:
-    psutil = None  # psutil is optional for CPU memory measurement
+    psutil = None
 
 try:
     import pyRAPL
 except ImportError:
     pyRAPL = None
 
-def seed_everything(seed: int = 42):
+def _seed_everything(seed: int = 42) -> None:
     """
-    Seeds random number generators for reproducibility.
+    Seed all relevant random number generators for reproducibility.
 
     Args:
-        seed (int): The seed value to use.
+        seed: Integer seed value.
     """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-    # Ensure deterministic behavior on GPU
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
-def warm_up(model: nn.Module, dataloader: DataLoader, device: torch.device, num_warmup: int = 5) -> None:
+
+def _warm_up(
+    model: nn.Module,
+    dataloader: DataLoader,
+    device: torch.device,
+    num_warmup: int = 5
+) -> None:
     """
-    Runs a warm-up phase to stabilize the model and device before benchmarking.
+    Run a few inference batches without timing to stabilize execution.
 
     Args:
-        model (nn.Module): The model to warm up.
-        dataloader (DataLoader): DataLoader supplying input data.
-        device (torch.device): Device on which to run inference.
-        num_warmup (int): Number of warm-up batches.
+        model: PyTorch model.
+        dataloader: DataLoader for inference data.
+        device: Torch device.
+        num_warmup: Number of batches to run.
     """
     # Set model to evaluation mode.
-    if is_quantized_model(model):
+    model_to_eval = (
         torch.ao.quantization.move_exported_model_to_eval(model)
-    else:
-        model.eval()
+        if is_quantized_model(model) else model
+    )
+    model_to_eval.to(device).eval()
 
+    it = iter(dataloader)
     with torch.no_grad():
-        warmup_iter = iter(dataloader)
         for _ in range(num_warmup):
             try:
-                inputs, _ = next(warmup_iter)
+                inputs, _ = next(it)
             except StopIteration:
-                warmup_iter = iter(dataloader)
-                inputs, _ = next(warmup_iter)
-            inputs = inputs.to(device)
-            _ = model(inputs)
+                it = iter(dataloader)
+                inputs, _ = next(it)
+            _ = model_to_eval(inputs.to(device))
 
 def measure_inference_performance(
     model: nn.Module,
@@ -70,94 +76,77 @@ def measure_inference_performance(
     device: torch.device,
     num_warmup: int = 5,
     num_trials: int = 50
-) -> tuple[float, float]:
+) -> Tuple[float, float]:
     """
-    Measures average inference time per sample and throughput.
+    Measure average inference time per sample and overall throughput.
 
     Args:
-        model (nn.Module): The model to evaluate.
-        dataloader (DataLoader): DataLoader supplying inference data.
-        device (torch.device): Device on which to run inference.
-        num_warmup (int): Warm-up iterations before timing.
-        num_trials (int): Number of batches for timing inference.
+        model: PyTorch model.
+        dataloader: DataLoader for inference data.
+        device: Torch device.
+        num_warmup: Warm-up iterations.
+        num_trials: Number of batches to time.
 
     Returns:
-        tuple[float, float]: (avg_time_per_sample in seconds, throughput in samples/sec)
+        avg_time_per_sample (sec), throughput (samples/sec).
     """
-    # Set model to evaluation mode.
-    if is_quantized_model(model):
+    model_to_eval = (
         torch.ao.quantization.move_exported_model_to_eval(model)
-    else:
-        model.eval()
-        
-    total_time = 0.0
+        if is_quantized_model(model) else model
+    )
+    model_to_eval.to(device).eval()
+
     total_samples = len(dataloader.dataset)
-
-    # Warm up before timing.
-    warm_up(model, dataloader, device, num_warmup=num_warmup)
-
-    # Set model to evaluation mode.
-    if is_quantized_model(model):
-        torch.ao.quantization.move_exported_model_to_eval(model)
-    else:
-        model.eval()
+    _warm_up(model_to_eval, dataloader, device, num_warmup)
 
     total_time = 0.0
-    total_samples = len(dataloader.dataset)
-
-    # Run a fixed number of batches
-    trial_iter = iter(dataloader)
+    it = iter(dataloader)
     with torch.no_grad():
         for _ in range(num_trials):
             try:
-                inputs, _ = next(trial_iter)
+                inputs, _ = next(it)
             except StopIteration:
-                trial_iter = iter(dataloader)
-                inputs, _ = next(trial_iter)
-            inputs = inputs.to(device)
-            batch_size = inputs.size(0)
-            start_time = time.time()
-            _ = model(inputs)
-            elapsed = time.time() - start_time
-            total_time += elapsed
+                it = iter(dataloader)
+                inputs, _ = next(it)
+            batch = inputs.to(device)
+            start = time.time()
+            _ = model_to_eval(batch)
+            total_time += time.time() - start
 
-    avg_time_per_sample = total_time / total_samples
-    throughput = total_samples / total_time
-
-    logging.info(f"Average inference time per sample: {avg_time_per_sample:.6f} seconds")
-    logging.info(f"Throughput: {throughput:.2f} samples/second")
-    return avg_time_per_sample, throughput
+    avg_time = total_time / total_samples
+    throughput = total_samples / total_time if total_time > 0 else float('inf')
+    logging.info(f"Avg inference time/sample: {avg_time:.6f}s, Throughput: {throughput:.2f} samples/s")
+    return avg_time, throughput
 
 def calculate_speedup(
     baseline_time: float,
     baseline_throughput: float,
     target_time: float,
     target_throughput: float
-) -> dict[str, float]:
+) -> dict:
     """
-    Calculates the speedup between two models based on their average inference times and throughput.
-
-    Speedup is calculated as:
-        - time_speedup = baseline_time / target_time
-        - throughput_speedup = target_throughput / baseline_throughput
+    Compute speedup metrics comparing a target model against a baseline.
 
     Args:
-        baseline_time (float): Average inference time per sample for the baseline model.
-        baseline_throughput (float): Throughput for the baseline model (samples per second).
-        target_time (float): Average inference time per sample for the target model.
-        target_throughput (float): Throughput for the target model (samples per second).
+        baseline_time: Avg time/sample for baseline.
+        baseline_throughput: Throughput for baseline.
+        target_time: Avg time/sample for target.
+        target_throughput: Throughput for target.
 
     Returns:
-        dict[str, float]: Dictionary with keys 'time_speedup' and 'throughput_speedup'.
+        Dict with 'time_speedup', 'throughput_speedup'.
+
+    Raises:
+        ValueError: If zero or negative values encountered.
     """
-    if target_time == 0 or baseline_throughput == 0:
-        raise ValueError("Target time and baseline throughput must be non-zero for speedup calculation.")
+    if baseline_time <= 0 or target_time <= 0:
+        raise ValueError("Times must be > 0.")
+    if baseline_throughput <= 0 or target_throughput <= 0:
+        raise ValueError("Throughput must be > 0.")
 
     time_speedup = baseline_time / target_time
     throughput_speedup = target_throughput / baseline_throughput
-
-    logging.info(f"Time speedup: {time_speedup:.2f}x")
-    logging.info(f"Throughput speedup: {throughput_speedup:.2f}x")
+    logging.info(f"Time speedup: {time_speedup:.2f}x, Throughput speedup: {throughput_speedup:.2f}x")
     return {"time_speedup": time_speedup, "throughput_speedup": throughput_speedup}
 
 
@@ -169,82 +158,86 @@ def measure_memory_usage(
     num_batches: int = 10
 ) -> float:
     """
-    Measures the peak memory usage during inference.
-
-    For CUDA devices, it resets the peak memory counter and then performs inference over a few batches.
-    For CPU inference, if psutil is available, it returns the process memory usage (in MB).
+    Measure peak memory usage (GPU or CPU) during inference.
 
     Args:
-        model (nn.Module): The model to evaluate.
-        dataloader (DataLoader): DataLoader to supply inference data.
-        device (torch.device): Device on which inference is performed.
-        num_warmup (int): Warm-up iterations before measurement.
-        num_batches (int): Number of batches to run for measuring memory usage.
+        model: PyTorch model.
+        dataloader: DataLoader for inference data.
+        device: Torch device.
+        num_warmup: Warm-up iterations.
+        num_batches: Batches to measure.
 
     Returns:
-        float: Peak memory usage in MB.
+        Peak memory in MB.
     """
-    warm_up(model, dataloader, device, num_warmup=num_warmup)
-    # Set model to evaluation mode.
-    if is_quantized_model(model):
+    _warm_up(model, dataloader, device, num_warmup)
+    model_to_eval = (
         torch.ao.quantization.move_exported_model_to_eval(model)
-    else:
-        model.eval()
+        if is_quantized_model(model) else model
+    )
+    model_to_eval.to(device).eval()
 
     if device.type == 'cuda':
         torch.cuda.reset_peak_memory_stats(device)
         with torch.no_grad():
-            batch_iter = iter(dataloader)
+            it = iter(dataloader)
             for _ in range(num_batches):
                 try:
-                    inputs, _ = next(batch_iter)
+                    inputs, _ = next(it)
                 except StopIteration:
-                    batch_iter = iter(dataloader)
-                    inputs, _ = next(batch_iter)
-                inputs = inputs.to(device)
-                _ = model(inputs)
-        peak_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
-        logging.info(f"Peak GPU memory usage: {peak_memory:.2f} MB")
+                    it = iter(dataloader)
+                    inputs, _ = next(it)
+                _ = model_to_eval(inputs.to(device))
+        peak = torch.cuda.max_memory_allocated(device) / 1e6
+        logging.info(f"Peak GPU memory: {peak:.2f} MB")
     else:
-        if psutil is not None:
-            process = psutil.Process(os.getpid())
-            mem_bytes = process.memory_info().rss
-            peak_memory = mem_bytes / (1024 ** 2)
-            logging.info(f"Process memory usage (CPU): {peak_memory:.2f} MB")
+        if psutil:
+            proc = psutil.Process(os.getpid())
+            peak = proc.memory_info().rss / 1e6
+            logging.info(f"CPU memory usage: {peak:.2f} MB")
         else:
-            peak_memory = 0.0
-            logging.warning("psutil not available; cannot measure CPU memory usage.")
-    return peak_memory
+            peak = 0.0
+            logging.warning("psutil not installed; CPU memory not measured.")
+    return peak
 
-def model_size(model: nn.Module) -> float:
+def model_size_mb(model: nn.Module, temp_path: str = "temp.pth") -> float:
     """
-    Computes the model size (state_dict size) in MB.
+    Compute disk size of model state dict in MB.
 
     Args:
-        model (torch.nn.Module): The model to be evaluated.
+        model: PyTorch model.
+        temp_path: Temporary file path for saving.
 
     Returns:
-        float: Model size in MB.
+        Size in MB.
     """
-    temp_pth_path = "temp.pth"
     try:
-        torch.save(model.state_dict(), temp_pth_path)
-        pth_size = os.path.getsize(temp_pth_path) / 1e6 if os.path.exists(temp_pth_path) else 0.0
-        return pth_size
+        torch.save(model.state_dict(), temp_path)
+        size_mb = os.path.getsize(temp_path) / 1e6
     finally:
-        if os.path.exists(temp_pth_path):
-            os.remove(temp_pth_path)
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+    logging.info(f"Model size: {size_mb:.2f} MB")
+    return size_mb
 
-def _gpu_power_sampler(stop_event: threading.Event, sampling_interval: float, results: list):
+def _gpu_power_sampler(
+    stop_event: threading.Event,
+    sampling_interval: float,
+    results: List[float]
+) -> None:
     """
-    Samples GPU power consumption using nvidia-smi at regular intervals and appends values to results.
+    Sample GPU power draw via nvidia-smi until stopped.
+
+    Args:
+        stop_event: Event to signal stop.
+        sampling_interval: Seconds between samples.
+        results: List to append power readings.
     """
     while not stop_event.is_set():
         try:
-            output = subprocess.check_output(
-                ["nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"],
-                encoding="utf-8"
-            )
+            output = subprocess.check_output([
+                "nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"
+            ], encoding='utf-8')
             power = float(output.splitlines()[0].strip())
         except Exception as e:
             logging.warning(f"Error sampling GPU power: {e}")
@@ -264,12 +257,12 @@ def measure_idle_power_consumption(
     For CPU devices, if pyRAPL is available, it uses pyRAPL to measure energy consumption while idle.
 
     Args:
-        device (torch.device): Device on which to measure power consumption.
-        idle_duration (float): Duration (in seconds) over which to measure idle power.
-        sampling_interval (float): Time interval (in seconds) between power samples (for GPU).
+        device: Torch device.
+        idle_duration: Seconds to measure.
+        sampling_interval: Interval between GPU samples.
 
     Returns:
-        float: Average idle power consumption in Watts.
+        Average idle power consumption in Watts.
     """
     # For GPU, use nvidia-smi to sample power during idle.
     if device.type == "cuda":
@@ -327,24 +320,25 @@ def measure_power_consumption(
     A warm-up phase is performed before measurement.
 
     Args:
-        model (torch.nn.Module): The model to evaluate.
-        dataloader (DataLoader): DataLoader supplying inference data.
-        device (torch.device): Device on which inference is performed.
-        num_warmup (int): Number of warm-up batches.
-        num_batches (int): Number of batches for measurement.
-        sampling_interval (float): Interval between power samples (for GPU).
+        model: Model to evaluate.
+        dataloader: DataLoader.
+        device: Torch device.
+        num_warmup: Warm-up batches.
+        num_batches: Batches to measure.
+        sampling_interval: GPU sampling interval.
 
     Returns:
-        float: Average power consumption in Watts.
+        Avg power in Watts.
     """
     # Warm up the model
-    warm_up(model, dataloader, device, num_warmup=num_warmup)
+    _warm_up(model, dataloader, device, num_warmup=num_warmup)
     
     # Set model to evaluation mode.
-    if is_quantized_model(model):
+    model_to_eval = (
         torch.ao.quantization.move_exported_model_to_eval(model)
-    else:
-        model.eval()
+        if is_quantized_model(model) else model
+    )
+    model_to_eval.to(device).eval()
 
     # GPU measurement.
     if device.type == "cuda":
@@ -409,33 +403,36 @@ def measure_latency_percentiles(
     Measures the latency percentiles (P50, P95, P99) of inference time per batch.
 
     Args:
-        model (nn.Module): The model to evaluate.
-        dataloader (DataLoader): DataLoader supplying inference data.
-        device (torch.device): Device on which to run inference.
-        num_trials (int): Number of inference trials to record. Defaults to 50.
+        model: Model to evaluate.
+        dataloader: DataLoader.
+        device: Torch device.
+        num_trials: Number of trials.
 
     Returns:
-        dict[str, float]: Dictionary with keys 'p50', 'p95', and 'p99' representing latency percentiles in seconds.
+        Dict with 'p50', 'p95', 'p99'.
     """
-    warm_up(model, dataloader, device)
+    _warm_up(model, dataloader, device)
 
     # Set model to evaluation mode.
-    if is_quantized_model(model):
+    model_to_eval = (
         torch.ao.quantization.move_exported_model_to_eval(model)
-    else:
-        model.eval()
+        if is_quantized_model(model) else model
+    )
+    model_to_eval.to(device).eval()
         
     latencies: list[float] = []
     
     with torch.no_grad():
         # Record inference time for a fixed number of trials.
         for _ in range(num_trials):
-            inputs, _ = next(iter(dataloader))
-            inputs = inputs.to(device)
-            start_time = time.time()
-            _ = model(inputs)
-            elapsed = time.time() - start_time
-            latencies.append(elapsed)
+            try:
+                inputs, _ = next(it)
+            except StopIteration:
+                it = iter(dataloader)
+                inputs, _ = next(it)
+            start = time.time()
+            _ = model_to_eval(inputs.to(device))
+            latencies.append(time.time() - start)
     
     # Compute latency percentiles.
     percentiles = {
@@ -448,40 +445,50 @@ def measure_latency_percentiles(
     return percentiles
 
 
-def measure_throughput_per_watt(throughput: float, power: float) -> float:
+def measure_throughput_per_watt(
+    throughput: float,
+    power: float
+) -> float:
     """
-    Computes throughput per Watt, indicating energy efficiency.
+    Compute throughput per Watt to assess energy efficiency.
 
     Args:
-        throughput (float): Throughput in samples per second.
-        power (float): Average power consumption in Watts.
+        throughput: Samples per second.
+        power: Watts consumed.
 
     Returns:
-        float: Throughput per Watt (samples/sec/Watt).
+        Samples/sec/Watt.
     """
-    if power > 0:
-        throughput_per_watt = throughput / power
-        logging.info(f"Throughput per Watt: {throughput_per_watt:.2f} samples/sec/Watt")
-        return throughput_per_watt
-    logging.warning("Power consumption is zero, cannot compute Throughput per Watt.")
-    return 0.0
+    if power <= 0:
+        logging.warning("Power <= 0, cannot compute throughput per Watt.")
+        return 0.0
+    tpw = throughput / power
+    logging.info(f"Throughput per Watt: {tpw:.2f} samples/s/W")
+    return tpw
 
 
-def benchmark(model1: nn.Module, model2: nn.Module, dataloader: DataLoader, device: torch.device) -> None:
+def benchmark(    
+    model1: nn.Module,
+    model2: nn.Module,
+    dataloader: DataLoader,
+    device: torch.device
+) -> None:
     """
     Benchmarks two models across various metrics including size, inference performance, memory usage,
     power consumption, energy per sample, latency percentiles, and throughput per Watt.
     Results are printed in a formatted table using pandas.
 
     Args:
-        model1 (nn.Module): The first model (e.g., teacher model).
-        model2 (nn.Module): The second model (e.g., student model).
-        dataloader (DataLoader): DataLoader supplying input data.
-        device (torch.device): Device on which to run inference.
+        model1: First model.
+        model2: Second model.
+        dataloader: DataLoader for inference.
+        device: Execution device.
     """
+    import pandas as pd
+
     # Measure model sizes.
-    model1_size = model_size(model1)
-    model2_size = model_size(model2)
+    model1_size = model_size_mb(model1)
+    model2_size = model_size_mb(model2)
 
     # Measure inference performance.
     avg_time1, throughput1 = measure_inference_performance(model1, dataloader, device)
@@ -493,7 +500,7 @@ def benchmark(model1: nn.Module, model2: nn.Module, dataloader: DataLoader, devi
     mem_usage2 = measure_memory_usage(model2, dataloader, device)
 
     # Idle power consumption
-    idle_power = measure_idle_power_consumption(device=device, idle_duration=5.0, sampling_interval=0.1)
+    idle_power = measure_idle_power_consumption(device=device)
 
     # Measure power consumption.
     power1 = measure_power_consumption(model1, dataloader, device)

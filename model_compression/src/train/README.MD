@@ -16,7 +16,7 @@ train/
 
 ## Contents
 
-- [Overview of Train Module](#overview-of-train-module)
+- [Overview of Train Module](#modules-overview)
 - [Available Functions](#available-functions)
   - [train_models](#transfer_learning)
   - [train_qat_with_kd](#train_qat_with_kd)
@@ -24,7 +24,7 @@ train/
 
 ---
 
-## Overview of Train Module
+## Modules Overview
 
 This module supports two training workflows:
 

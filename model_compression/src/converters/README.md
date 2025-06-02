@@ -1,6 +1,6 @@
 # Converters
 
-This folder contains utility scripts to convert PyTorch models into various target formats including ONNX, TFLite, and ExecuTorch PTE (Portable Torch Executable) files.
+The converters module provides utilities to transform PyTorch models into various target formats for deployment, including ONNX, TensorFlow SavedModel, TFLite, and ExecuTorch PTE files.
 
 ---
 
@@ -8,9 +8,10 @@ This folder contains utility scripts to convert PyTorch models into various targ
 
 ```
 converters/
-├── to_executorch.py
-├── to_onnx.py
-├── to_tflite.py
+├── __init__.py
+├── to_executorch.py # ExecuTorch PTE conversion
+├── to_onnx.py         # ONNX and ONNX→SavedModel conversion
+└── to_tflite.py       # PyTorch/TensorFlow→TFLite conversion
 ```
 
 ---
@@ -19,9 +20,9 @@ converters/
 
 - [Overview of Converters Module](#overview-of-the-converters-module)
 - [Available Functions](#available-functions)
-  - [to_executorch](#to_executorch)
-  - [to_onnx](#to_onnx)
-  - [to_tflite](#to_tflite)
+  - [to_executorch](#executorch-pte)
+  - [to_onnx](#onnx)
+  - [to_tflite](#tflite)
 - [How to Use](#how-to-use)
 
 --- 
@@ -38,98 +39,98 @@ The `converters` module facilitates model deployment across different platforms 
 
 ## Available Functions
 
-### `to_executorch`
+### ExecuTorch PTE
 
-- `convert_to_executorch_program(model, example_inputs, save_path="model.pte", verbose=False)`
-  - Converts a PyTorch model to ExecuTorch format using the Torch Export API and saves as `.pte`.
+- **`convert_to_executorch_program(model, example_inputs, save_path="model.pte", verbose=False)`**  
+  Convert a PyTorch model into an ExecuTorch edge-optimized IR and save as `.pte`.
 
-- `convert_quantized_to_edge_pte(quantized_model, example_inputs, save_path="quantized_model.pte")`
-  - Converts a quantized PyTorch model to ExecuTorch `.pte` using export-to-edge APIs.
+- **`convert_quantized_to_edge_pte(quantized_model, example_inputs, save_path="quantized_model.pte")`**  
+  Compile a quantized PyTorch model into a PTE program for edge deployment.
 
----
 
-### `to_onnx`
+### ONNX
 
-- `export_pytorch_to_onnx(model, example_input, onnx_file_path, dynamo=True, opset_version=18)`
-  - Exports a PyTorch model to ONNX format.
+- **`export_pytorch_to_onnx(model, example_input, onnx_file_path, dynamo=True, opset_version=18)`**  
+  Export a PyTorch model to ONNX, with optional dynamic batch support.
 
-- `export_onnx_to_savedmodel(onnx_path, saved_model_dir)`
-  - Converts an ONNX model to a TensorFlow SavedModel.
+- **`export_onnx_to_savedmodel(onnx_path, saved_model_dir)`**  
+  Convert an ONNX model into a TensorFlow SavedModel via `onnx-tf` backend.
 
-- `export_savedmodel_to_tflite(saved_model_dir, tflite_model_path, calibration_dataloader, num_calibration_steps=100)`
-  - Converts a TensorFlow SavedModel to a fully quantized TFLite model using a representative dataset.
 
----
+### TFLite 
 
-### `to_tflite`
+- **`convert_pytorch_model_to_tflite(model, example_inputs, save_dir)`**  
+  Use `ai_edge_torch` to export a PyTorch model directly to a TFLite FlatBuffer.
 
-- `convert_pytorch_model_to_tflite(model, example_inputs, save_dir)`
-  - Converts a PyTorch model directly to a TFLite model using `ai_edge_torch`.
+- **`convert_tensorflow_model_to_tflite(saved_model_dir, tflite_model_path)`**  
+  Convert a TensorFlow SavedModel to TFLite using the official TFLiteConverter.
 
-- `convert_tensorflow_model_to_tflite(saved_model_dir, tflite_model_path)`
-  - Converts a TensorFlow SavedModel to a TFLite flatbuffer.
+- **`convert_to_static_quant_tflite(saved_model_dir, output_tflite_path, representative_dataset, ...)`**  
+  Generate a fully int8-quantized TFLite model with a representative dataset for calibration.
 
 ---
 
 ## How to Use
 
-All scripts are designed to be imported as modules and used programmatically in your training or deployment pipeline.
+Below are common workflows for converting models:
 
-### 1. Convert PyTorch → ONNX → TensorFlow → INT8 TFLite
-
+### 1. PyTorch → ONNX → TensorFlow SavedModel → TFLite
 ```python
-from converters.to_onnx import (
+from model_compression.src.converters.to_onnx import (
     export_pytorch_to_onnx,
-    export_onnx_to_savedmodel,
-    export_savedmodel_to_tflite
+    export_onnx_to_savedmodel
 )
+from model_compression.src.converters.to_tflite import convert_tensorflow_model_to_tflite
 
-# Step 1: Export to ONNX
+# 1. Export PyTorch to ONNX
 export_pytorch_to_onnx(model, example_input, "model.onnx")
 
-# Step 2: ONNX → TF
+# 2. Convert ONNX to SavedModel
 export_onnx_to_savedmodel("model.onnx", "saved_model_dir")
 
-# Step 3: TF → INT8 TFLite
-export_savedmodel_to_tflite("saved_model_dir", "model.tflite", dataloader)
-```
-
----
-
-### 2. Convert PyTorch → ExecuTorch `.pte`
-
-```python
-from converters.to_executorch import convert_to_executorch_program
-
-filename = convert_to_executorch_program(model, (input_tensor,), save_path="model.pte")
-```
-
----
-
-### 3. Convert Quantized PyTorch → ExecuTorch `.pte`
-
-```python
-from converters.to_executorch import convert_quantized_to_edge_pte
-
-filename = convert_quantized_to_edge_pte(quant_model, (input_tensor,))
-```
-
----
-
-### 4. Convert PyTorch → TFLite via `ai_edge_torch`
-
-```python
-from converters.to_tflite import convert_pytorch_model_to_tflite
-
-convert_pytorch_model_to_tflite(model, (example_tensor,), "output_dir")
-```
-
----
-
-### 5. Convert TF SavedModel → TFLite
-
-```python
-from converters.to_tflite import convert_tensorflow_model_to_tflite
-
+# 3. Convert SavedModel to TFLite
 convert_tensorflow_model_to_tflite("saved_model_dir", "model.tflite")
 ```
+
+### 2. PyTorch → ExecuTorch `.pte`
+```python
+from model_compression.src.converters.to_executorch import convert_to_executorch_program
+
+pte_path = convert_to_executorch_program(
+    model, (input_tensor,), save_path="model.pte", verbose=True
+)
+```
+
+### 3. Quantized PyTorch → ExecuTorch `.pte`
+```python
+from model_compression.src.converters.to_executorch import convert_quantized_to_edge_pte
+
+pte_path = convert_quantized_to_edge_pte(
+    quantized_model, (input_tensor,)
+)
+```
+
+### 4. PyTorch → TFLite via `ai_edge_torch`
+```python
+from model_compression.src.converters.to_tflite import convert_pytorch_model_to_tflite
+
+convert_pytorch_model_to_tflite(
+    model, (example_tensor,), "output_model.tflite"
+)
+```
+
+### 5. SavedModel → Static INT8 TFLite
+```python
+from model_compression.src.converters.to_tflite import convert_to_static_quant_tflite
+
+# representative_dataset yields numpy arrays for calibration
+convert_to_static_quant_tflite(
+    "saved_model_dir",
+    "quant_model.tflite",
+    representative_dataset=lambda: (x for x, _ in calib_loader)
+)
+```
+
+---
+
+For detailed API and advanced options, refer to the source code in the `converters` folder.

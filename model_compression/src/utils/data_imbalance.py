@@ -1,48 +1,81 @@
-import torch
-import numpy as np
-from sklearn.utils.class_weight import compute_class_weight
+import logging
 from collections import Counter
+from typing import Union
+
+import numpy as np
+import torch
+from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import Dataset, WeightedRandomSampler
 
-def calculate_model_weights(data: Dataset) -> torch.Tensor:
+### TODO: TEST IF THIS WORKS ###
+def calculate_model_weights(
+    dataset: Dataset
+) -> torch.Tensor:
     """
-    Calculate class weights for imbalanced datasets dynamically.
+    Compute class weights for imbalanced datasets to use in loss functions.
 
     Args:
-        data (Dataset): PyTorch Dataset.
+        dataset: A PyTorch Dataset or Subset with attributes 'classes' and 'targets'.
 
     Returns:
-        torch.Tensor: Class weights tensor for weighted loss computation.
+        A 1D tensor of shape (num_classes,) containing the weight for each class.
+
+    Raises:
+        AttributeError: If dataset lacks 'classes' or 'targets'.
+        ValueError: If 'targets' and 'classes' sizes mismatch.
     """
-    # Get class labels from dataset
-    class_labels = data.dataset.classes
-    num_classes = len(class_labels)
+    # Access base dataset
+    base = getattr(dataset, 'dataset', dataset)
 
-    # Extract targets and convert to numpy array
-    targets = np.array(data.dataset.targets)
+    classes = getattr(base, 'classes', None)
+    targets = getattr(base, 'targets', None)
+    if classes is None or targets is None:
+        logging.error("Dataset must have 'classes' and 'targets' attributes.")
+        raise AttributeError("Dataset missing 'classes' or 'targets'.")
 
-    # Compute class weights using sklearn
-    class_weights = compute_class_weight(class_weight="balanced", classes=np.arange(num_classes), y=targets)
+    num_classes = len(classes)
+    targets_arr = np.array(targets)
+    if targets_arr.ndim != 1:
+        raise ValueError("`targets` must be a 1D array-like of class indices.")
 
-    # Convert to PyTorch tensor
-    return torch.tensor(class_weights, dtype=torch.float32)
+    # Compute balanced class weights
+    weights = compute_class_weight(
+        class_weight='balanced',
+        classes=np.arange(num_classes),
+        y=targets_arr
+    )
+    return torch.tensor(weights, dtype=torch.float32)
 
-def get_weighted_sampler(data: Dataset) -> WeightedRandomSampler:
+def get_weighted_sampler(
+    dataset: Dataset
+) -> WeightedRandomSampler:
     """
-    Create a WeightedRandomSampler to oversample minority classes.
+    Create a WeightedRandomSampler to oversample underrepresented classes.
 
     Args:
-        data (Dataset): PyTorch Dataset.
+        dataset: A PyTorch Dataset or Subset with attributes 'targets'.
 
     Returns:
-        WeightedRandomSampler: Sampler object for DataLoader.
+        A WeightedRandomSampler for use in a DataLoader.
+
+    Raises:
+        AttributeError: If dataset lacks 'targets'.
     """
-    # Compute class counts dynamically
-    targets = np.array(data.dataset.targets)
-    class_counts = Counter(targets)
-    
-    # Compute sample weights (inverse of class frequency)
+    base = getattr(dataset, 'dataset', dataset)
+    targets = getattr(base, 'targets', None)
+    if targets is None:
+        logging.error("Dataset must have 'targets' attribute.")
+        raise AttributeError("Dataset missing 'targets'.")
+
+    labels = np.array(targets)
+    class_counts = Counter(labels)
+    # Compute inverse frequency for each class
     class_weights = {cls: 1.0 / count for cls, count in class_counts.items()}
-    sample_weights = np.array([class_weights[label] for label in targets])
+    # Assign weight to each sample
+    sample_weights = np.array([class_weights[int(label)] for label in labels], dtype=np.float32)
 
-    return WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+    return WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True
+    )
