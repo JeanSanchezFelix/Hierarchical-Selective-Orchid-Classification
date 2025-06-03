@@ -6,7 +6,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import Dataset, Subset
 from sklearn.model_selection import train_test_split
 from collections import defaultdict
-from CustomHierarchicalDataset import HierarchicalDataset 
+from datasets.CustomHierarchicalDataset  import HierarchicalDataset
 
 class TaxonomicOrchidDataset(HierarchicalDataset):
     """
