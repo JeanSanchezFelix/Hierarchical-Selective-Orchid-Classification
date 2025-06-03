@@ -21,8 +21,8 @@ class TaxonomicOrchidDataset(HierarchicalDataset):
         use_minority_augmentation (`bool`): Whether to apply augmentations only to the smaller-count classes.
         minority_threshold (`int`): Classes with fewer than this number of samples are considered minority.
     """
-    rootDir = "G:/My Drive/ColabNotebooks/TaxonomicOrchidDataset" #For testing reasons
-#   root_dir = "data/taxonomic-orchid/download/"
+    # rootDir = "G:/My Drive/ColabNotebooks/TaxonomicOrchidDataset" #For testing reasons
+    root_dir = "data/taxonomic-orchid/download/"
 
     def __init__(self, transform=None, mode="train", hierarchical_class_mode=False, use_minority_augmentation=True, minority_threshold=100):
         self.name = "Taxonomic Orchid Dataset (TOD)"

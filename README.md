@@ -16,11 +16,13 @@ repository/
 ├── data/                         # Raw image datasets
 │   ├── cp-anemia/
 │   ├── monkeypox/
-│   └── skin-lesions/
+│   ├── skin-lesions/
+│   └── taxonomic-orchid/
 ├── datasets/                     # PyTorch Dataset implementations
 │   ├── CpAnemiaDataset.py
 │   ├── MonkeypoxDataset.py
 │   ├── SkinCancerDataset.py
+│   ├── TaxonomicOrchidDataset.py
 │   └── registry.py               # Map names → dataset classes
 ├── model_compression/            # Core package
 │   └── src/
