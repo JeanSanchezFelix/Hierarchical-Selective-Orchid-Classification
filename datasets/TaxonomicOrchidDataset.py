@@ -22,7 +22,7 @@ class TaxonomicOrchidDataset(HierarchicalDataset):
         minority_threshold (`int`): Classes with fewer than this number of samples are considered minority.
     """
     # rootDir = "G:/My Drive/ColabNotebooks/TaxonomicOrchidDataset" #For testing reasons
-    root_dir = "data/taxonomic-orchid/download/"
+    rootDir = "data/taxonomic-orchid/download/"
 
     def __init__(self, transform=None, mode="train", hierarchical_class_mode=False, use_minority_augmentation=True, minority_threshold=100):
         self.name = "Taxonomic Orchid Dataset (TOD)"
@@ -63,13 +63,13 @@ class TaxonomicOrchidDataset(HierarchicalDataset):
                     taxonMap[genus_dir] = species
         return taxonMap
     
+    def getLabels(self):
+        return self.taxon
+    
     @classmethod
     def getDir(cls):
         return cls.rootDir
 
-    @classmethod
-    def getLabels(cls):
-        return cls.taxon
 
 class TestTaxonomicOrchidDataset:
     def __init__(self, mode="train", split_ratios={'train': 0.8, 'val': 0.1, 'test': 0.1}, random_state=18):
