@@ -45,6 +45,9 @@ class HierarchicalImageFolder(ImageFolder):
         
         return self.find_classes_flat(directory)
 
+    #TODO: Build a selective function that just chooses the amount of classes i want to use when i want a flat dataset\
+    #TODO: Add all the photos but the label would only be of the specifed labled other whise unlabled (Non-Selected) This function if only one class is selected is only putting that class and there is no
+    #TODO: Add a special class that is non of the list 
     def find_classes_flat(self, directory):
         """
         Finds the class folders directly under `directory`, skipping 'UNLABELED'.
@@ -52,9 +55,11 @@ class HierarchicalImageFolder(ImageFolder):
         Returns:
             tuple: (classes, class_to_idx)
         """
+        # allowed_classes = ["Dendrobium", "Phalaenopsis"]
         classes = [
             d.name for d in os.scandir(directory)
             if d.is_dir() and d.name.upper() != "UNLABELED"
+            # if d.is_dir() and d.name in allowed_classes
         ]
         classes.sort()
         class_to_idx = {cls_name: idx for idx, cls_name in enumerate(classes)}
@@ -164,6 +169,7 @@ class HierarchicalDataset(Dataset):
         self.dataset = HierarchicalImageFolder(root_dir, transform, hierarchical_class_mode)
         self.targets = np.array(self.dataset.targets)
         self.class_to_idx = self.dataset.class_to_idx
+        # This is taken by torchvision datasets that it also searches for the class based on the directory names
         self.classes = self.dataset.classes
         self.aug_prob = aug_prob
 
@@ -178,7 +184,7 @@ class HierarchicalDataset(Dataset):
                 transforms.RandomRotation(30),
                 transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
                 transforms.RandomAffine(degrees=0, shear=10),
-                transforms.ToTensor()
+                # transforms.ToTensor()
             ])
 
     def __len__(self):
