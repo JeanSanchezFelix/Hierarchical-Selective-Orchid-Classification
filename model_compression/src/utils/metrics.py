@@ -258,16 +258,18 @@ def plot_roc_auc_curve(
     # Binary classification
     if num_classes == 2:
         # Check proba shape
-        if y_proba.shape[1] != 2:
-            raise ValueError(f"Expected y_proba with shape (*, 2) for binary, got {y_proba.shape}")
-        fpr, tpr, _ = roc_curve(y_true, y_proba[:, 1])
-        roc_auc = auc(fpr, tpr)
-        plt.plot(
-            fpr, tpr,
-            color=colors[1],
-            lw=2,
-            llabel=f"{class_names[1]} (AUC = {roc_auc:.2f})"
-        )
+        if y_proba.shape[1] != 1:
+            raise ValueError(f"Expected y_proba with shape (*, 1) for binary, got {y_proba.shape}")
+        
+        for i in range(num_classes - 1):
+            fpr, tpr, _ = roc_curve(y_true, y_proba[:, i])
+            roc_auc = auc(fpr, tpr)
+            plt.plot(
+                fpr, tpr,
+                color=colors[i],
+                lw=2,
+                label=f"{class_names[i]} (AUC = {roc_auc:.2f})"
+            )
     else:
         # Multiclass: binarize and plot per class
         y_true_bin = label_binarize(y_true, classes=classes)
@@ -341,16 +343,21 @@ def plot_calibration_curve(
     plt.figure(figsize=(10, 8))
 
     # Binary calibration
-    if y_proba.shape[1] == 2 and num_classes == 2:
-        prob_true, prob_pred = calibration_curve(y_true, y_proba[:, 1], n_bins=n_bins)
-        plt.plot(
-            prob_pred, prob_true,
-            marker=markers[0],
-            linestyle='-',
-            lw=2,
-            label=class_names[i],
-            color=colors[i]
-        )
+    if y_proba.shape[1] == 1 and num_classes == 2:        
+        y_true_bin = label_binarize(y_true, classes=classes)
+
+        for i in range(num_classes - 1):
+            prob_true, prob_pred = calibration_curve(
+                y_true_bin[:, i], y_proba[:, i], n_bins=n_bins
+            )
+            plt.plot(
+                prob_pred, prob_true,
+                marker=markers[i % len(markers)],
+                linestyle='-',
+                lw=2,
+                label=class_names[i],
+                color=colors[i]
+            )
     else:
         # Multiclass one-vs-rest calibration
         y_true_bin = label_binarize(y_true, classes=classes)

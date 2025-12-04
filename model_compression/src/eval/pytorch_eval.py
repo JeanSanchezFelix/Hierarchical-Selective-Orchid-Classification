@@ -66,7 +66,11 @@ def test_inference(
 
     with torch.no_grad():  # Disable gradient computation
         for inputs, labels in tqdm(data_loader, desc="Inference Progress"):
-            inputs, labels = inputs.to(device), labels.to(device)
+            
+            if len(classes) <= 2:   # Binary classification label adjustment
+                inputs, labels = inputs.to(device), labels.to(device).float().unsqueeze(1)
+            else:
+                inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
 
             batch_size = inputs.size(0)

@@ -11,7 +11,7 @@ class HierarchicalImageFolder(ImageFolder):
     """
     Custom extension of torchvision.datasets.ImageFolder that supports hierarchical class structures or flat directories. 
         - NOTE: Skips folders named 'UNLABELED' at any level.
-        - Base code could be expanded for  multiple levels
+        - Base code could be expanded for multiple levels.
 
     Args:
         root_dir (`str`): Path to dataset.
@@ -19,6 +19,8 @@ class HierarchicalImageFolder(ImageFolder):
         hierarchical_class_mode (`bool`):         
             - If True, expects images organized in genus/species sub-folders (2-level).
             - If False, expects species-level folders only (1-level).
+        allowed_classes (`list[str]`, optional): Classes to filter out. 
+            - If provided, all other classes are grouped under 'Non-Selected'.
     """
     def __init__(
         self,
@@ -27,9 +29,11 @@ class HierarchicalImageFolder(ImageFolder):
         hierarchical_class_mode=True,
         target_transform=None,
         loader=default_loader,
-        is_valid_file=None
+        is_valid_file=None,
+        allowed_classes=None
     ):
         self.hierarchical_class_mode = hierarchical_class_mode
+        self.allowed_classes = allowed_classes
         super().__init__(
             root,
             transform=transform,
@@ -39,15 +43,11 @@ class HierarchicalImageFolder(ImageFolder):
         )
 
     def find_classes(self, directory):
-
         if self.hierarchical_class_mode:
             return self.find_classes_hierarchical(directory)
         
         return self.find_classes_flat(directory)
 
-    #TODO: Build a selective function that just chooses the amount of classes i want to use when i want a flat dataset\
-    #TODO: Add all the photos but the label would only be of the specifed labled other whise unlabled (Non-Selected) This function if only one class is selected is only putting that class and there is no
-    #TODO: Add a special class that is non of the list 
     def find_classes_flat(self, directory):
         """
         Finds the class folders directly under `directory`, skipping 'UNLABELED'.
@@ -55,15 +55,36 @@ class HierarchicalImageFolder(ImageFolder):
         Returns:
             tuple: (classes, class_to_idx)
         """
-        # allowed_classes = ["Dendrobium", "Phalaenopsis"]
-        classes = [
+        all_classes = [
             d.name for d in os.scandir(directory)
             if d.is_dir() and d.name.upper() != "UNLABELED"
-            # if d.is_dir() and d.name in allowed_classes
         ]
-        classes.sort()
-        class_to_idx = {cls_name: idx for idx, cls_name in enumerate(classes)}
-        return classes, class_to_idx
+        all_classes.sort()
+
+
+        #NOTE: Add class weights to the selected ``allowed_classes`` to combat class imbalance
+        # class_weights = self.calculate_class_weights(all_classes)
+        # class_weights = {cls: 1.0 for cls in self.allowed_classes} if self.allowed_classes else {}
+
+
+
+        #NOTE: REMOVE HARDCODED TEST LINE
+        self.allowed_classes = ["Dendrobium"]
+
+        if self.allowed_classes:
+            # Only include specified classes, and create a 'Non-Selected' class for all others
+            selected_classes = [cls for cls in all_classes if cls in self.allowed_classes]
+            if not selected_classes:
+                raise ValueError("No matching classes found in dataset for allowed_classes.")
+            # Add 'Non-Selected' as the last class
+            selected_classes.append("Non-Selected")
+            class_to_idx = {cls_name: idx for idx, cls_name in enumerate(selected_classes)}
+        else:
+            # Normal behavior - use all classes
+            selected_classes = all_classes
+            class_to_idx = {cls_name: idx for idx, cls_name in enumerate(selected_classes)}
+
+        return selected_classes, class_to_idx
 
     def find_classes_hierarchical(self, directory):
         """
@@ -89,6 +110,7 @@ class HierarchicalImageFolder(ImageFolder):
     def make_dataset(self, directory, class_to_idx, extensions=None, is_valid_file=None, allow_empty=False):
         """
         Builds the (image_path, class_index) dataset.
+        Now properly assigns 'Non-Selected' label to classes not in allowed_classes
         """
         instances = []
         available_classes = set(class_to_idx.keys())
@@ -99,19 +121,36 @@ class HierarchicalImageFolder(ImageFolder):
                 cls_path = os.path.join(directory, cls)
                 if not os.path.isdir(cls_path) or cls.upper() == "UNLABELED":
                     continue
-                if cls not in available_classes:
+
+                # Determine the label name
+                if self.allowed_classes:
+                    # If this class is in allowed_classes, use it; otherwise use 'Non-Selected'
+                    label_name = cls if cls in self.allowed_classes else "Non-Selected"
+                else:
+                    # No filtering - use the class name directly
+                    label_name = cls
+                
+                # Skip if label_name is not in our class_to_idx mapping
+                if label_name not in class_to_idx:
                     continue
+
+                # Now traverse the subfolder structure (genus/species/images)
                 for subfolder in sorted(os.listdir(cls_path)):
                     subfolder_path = os.path.join(cls_path, subfolder)
                     if not os.path.isdir(subfolder_path):
                         continue
+
                     for fname in sorted(os.listdir(subfolder_path)):
                         path = os.path.join(subfolder_path, fname)
+                
+                        # Validate file
                         if is_valid_file and not is_valid_file(path):
                             continue
                         elif extensions and not path.lower().endswith(extensions):
                             continue
-                        item = (path, class_to_idx[cls])
+
+                        # Add to dataset with correct label
+                        item = (path, class_to_idx[label_name])
                         instances.append(item)
 
         else:
@@ -156,6 +195,7 @@ class HierarchicalDataset(Dataset):
             - If False, expects species-level folders only (1-level).        
         use_minority_augmentation (`bool`): Whether to apply augmentations only to minority classes.
         minority_threshold (`int`): Threshold below which a class is considered a minority.
+        allowed_classes (`list[str]`, optional): Classes to include. Others become 'Non-Selected'.
     """
     def __init__(
         self,
@@ -165,8 +205,15 @@ class HierarchicalDataset(Dataset):
         use_minority_augmentation=False,
         minority_threshold=1000,
         aug_prob=0.5,
+        allowed_classes=None
     ):
-        self.dataset = HierarchicalImageFolder(root_dir, transform, hierarchical_class_mode)
+        self.use_minority_augmentation = use_minority_augmentation
+        self.dataset = HierarchicalImageFolder(
+            root_dir, 
+            transform, 
+            hierarchical_class_mode,
+            allowed_classes=allowed_classes
+        )
         self.targets = np.array(self.dataset.targets)
         self.class_to_idx = self.dataset.class_to_idx
         # This is taken by torchvision datasets that it also searches for the class based on the directory names

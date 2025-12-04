@@ -6,7 +6,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import Dataset, Subset
 from sklearn.model_selection import train_test_split
 from collections import defaultdict
-from datasets.CustomHierarchicalDataset  import HierarchicalDataset
+from datasets.CustomHierarchicalDataset import HierarchicalDataset
 
 class TaxonomicOrchidDataset(HierarchicalDataset):
     """
@@ -20,22 +20,48 @@ class TaxonomicOrchidDataset(HierarchicalDataset):
             - If False, expects species-level folders only (1-level).        
         use_minority_augmentation (`bool`): Whether to apply augmentations only to the smaller-count classes.
         minority_threshold (`int`): Classes with fewer than this number of samples are considered minority.
+        allowed_classes (`list[str]`, optional): Specific species to include. Others become 'Non-Selected'.
     """
     # rootDir = "G:/My Drive/ColabNotebooks/TaxonomicOrchidDataset" #For testing reasons
-    rootDir = "data/taxonomic-orchid/download/"
+    # rootDir = "data/taxonomic-orchid/download/"
+    # rootDir =  "/home/jean-sanchez/Documents/TaxonomicOrchidDataset/TaxonomicOrchidDataset"
+    rootDir =  "data/taxonomic-orchid/TaxonomicOrchidDataset"
 
-    def __init__(self, transform=None, mode="train", hierarchical_class_mode=False, use_minority_augmentation=True, minority_threshold=100):
+    def __init__(
+        self, 
+        transform=None, 
+        mode="train", 
+        hierarchical_class_mode=False, 
+        use_minority_augmentation=True, 
+        minority_threshold=100,
+        allowed_classes=None
+    ):
         self.name = "Taxonomic Orchid Dataset (TOD)"
         self.mode = mode
         self.use_minority_augmentation = use_minority_augmentation
 
-        super().__init__(self.rootDir, transform, hierarchical_class_mode, use_minority_augmentation, minority_threshold)
+        super().__init__(
+            self.rootDir, 
+            transform, 
+            hierarchical_class_mode, 
+            use_minority_augmentation, 
+            minority_threshold,
+            allowed_classes=allowed_classes  
+        )
 
         # Multi-class mapping
         self.class_to_idx = self.class_to_idx
 
         # Get genus-to-species mapping
         self.taxon = self.taxonomic_mapping()
+        
+        #NOTE: TESTING PURPOSES ONLY
+        print(f"\n[TaxonomicOrchidDataset] Initialized with:")
+        print(f"  - Mode: {mode}")
+        print(f"  - Classes' Structure: {'Hierarchical (all-species)' if hierarchical_class_mode else 'Flat (genera-only)'}")
+        print(f"  - Number of classes: {len(self.classes)}")
+        print(f"  - Total samples: {len(self.dataset)}")
+        print(f"  - Classes: {self.classes}\n")
 
     def taxonomic_mapping(self):
         """

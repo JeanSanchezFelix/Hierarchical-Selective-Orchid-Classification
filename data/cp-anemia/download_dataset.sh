@@ -22,13 +22,13 @@ echo "Unzipping dataset..."
 unzip $FILENAME -d "."
 # Unrar don't like spaces in the filename, removing them
 mv -v "CP-AnemiC (A Conjunctival Pallor) Dataset from Ghana" cp-anemia-dir
-mv -v "cp-anemia-dir/CP-Anemic dataset.rar" "cp-anemia-dir/dataset.rar"
+mv -v "cp-anemia-dir/CP-AnemiC dataset.rar" "cp-anemia-dir/dataset.rar"
 pwd
 unrar x "cp-anemia-dir/dataset.rar"
 
 mkdir -p $DEST_DIR
 mv Anemic $DEST_DIR
-mv Non-Anemic $DEST_DIR
+mv Non-anemic $DEST_DIR
 
 
 # Remove the zip file
