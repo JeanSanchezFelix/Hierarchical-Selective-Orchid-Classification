@@ -10,6 +10,38 @@ from torchvision import transforms
 from datasets.registry import DATASET_REGISTRY
 from model_compression.src.utils.data_imbalance import get_weighted_sampler
 
+class TransformSubset(Dataset):
+    """
+    Wraps a Subset and applies a transform without mutating the parent dataset.
+    
+    Args:
+        subset (`torch.utils.data.Subset`): An existing Subset to wrap and apply transforms to.
+        transform (`transforms.Compose`): A transformation object to apply to each image.  
+    """
+    def __init__(self, subset, transform):
+        self.subset = subset
+        self.transform = transform
+        root_ds = subset.dataset
+        self.classes = root_ds.classes
+        self.class_to_idx = root_ds.class_to_idx
+        self.targets = [root_ds.targets[i] for i in subset.indices]
+
+    def __len__(self):
+        return len(self.subset)
+
+    def __getitem__(self, idx):
+        sample = self.subset[idx]
+
+        if len(sample) == 3:
+            img, label, weight = sample
+        else:
+            img, label = sample
+            weight = None
+
+        if self.transform:
+            img = self.transform(img)
+        return (img, label, weight) if weight is not None else (img, label)
+    
 def _log_dataset_statistics(
     dataset: Dataset,
     dataset_label: str
@@ -72,7 +104,8 @@ def load_data(
     mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
     std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
     use_augmentation: bool = False,
-    use_sampler: bool = False
+    use_sampler: bool = False,
+    random_seed: int = 18
 ) -> Dict[str, DataLoader]:
     """
     Load a dataset by name, apply transforms, split if needed, and return DataLoaders.
@@ -137,35 +170,52 @@ def load_data(
             val_ds = dataset_cls(mode='val', transform=val_transform)
             sampler: Optional[Sampler] = get_weighted_sampler(train_ds) if use_sampler else None
             loaders['train'] = DataLoader(
-                train_ds.dataset, batch_size=batch_size,
+                train_ds, batch_size=batch_size,
                 sampler=sampler, shuffle=not use_sampler
             )
-            loaders['val'] = DataLoader(val_ds.dataset, batch_size=batch_size, shuffle=True)
+            loaders['val'] = DataLoader(val_ds, batch_size=batch_size, shuffle=True)
 
             # Optional test split
             test_dir = os.path.join(root_dir, 'test')
             if os.path.isdir(test_dir):
                 test_ds = dataset_cls(mode='test', transform=test_transform)
-                loaders['test'] = DataLoader(test_ds.dataset, batch_size=batch_size, shuffle=False)
+                loaders['test'] = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
         else:
             # Manual split
             logging.info("No pre-split folders found; performing manual split.")
-            full_ds = dataset_cls(transform=basic_transform)
+            full_ds = dataset_cls(transform=None)  # no transform at dataset level
+
+            # Scrape targets and infer classes from full_ds if not exposed 
+            if not hasattr(full_ds, 'classes') or full_ds.classes is None:
+                if hasattr(full_ds, 'class_to_idx'):
+                    idx_to_class = {v: k for k, v in full_ds.class_to_idx.items()}
+                    full_ds.classes = [idx_to_class[i] for i in sorted(idx_to_class.keys())]
+                    logging.info(f"Inferred classes from class_to_idx: {full_ds.classes}")
+
+            if not hasattr(full_ds, 'targets'):
+                logging.info("Dataset has no 'targets' attribute, scraping labels...")
+                full_ds.targets = [full_ds[i][1] for i in range(len(full_ds))]
+
             total = len(full_ds)
             n_train = int(train_split * total)
             n_test = int(test_split * total)
             n_val = total - n_train - n_test
+            train_subset, val_subset, test_subset = random_split(
+                full_ds, [n_train, n_val, n_test],
+                generator=torch.Generator().manual_seed(random_seed)
+            )
+            # Apply augmentation to training subset only, and basic transforms to val/test
+            train_subset = TransformSubset(train_subset, train_transform)  
+            val_subset   = TransformSubset(val_subset,   basic_transform)  
+            test_subset  = TransformSubset(test_subset,  basic_transform) 
 
-            train_subset, val_subset, test_subset = random_split(full_ds, [n_train, n_val, n_test])
-            # Apply augmentation to train
-            train_subset.dataset.transform = train_transform
             sampler = get_weighted_sampler(train_subset) if use_sampler else None
             loaders['train'] = DataLoader(
-                train_subset.dataset, batch_size=batch_size,
+                train_subset, batch_size=batch_size,
                 sampler=sampler, shuffle=not use_sampler
             )
-            loaders['val'] = DataLoader(val_subset.dataset, batch_size=batch_size, shuffle=True)
-            loaders['test'] = DataLoader(test_subset.dataset, batch_size=batch_size, shuffle=False)
+            loaders['val'] = DataLoader(val_subset,  batch_size=batch_size, shuffle=True)
+            loaders['test'] = DataLoader(test_subset, batch_size=batch_size, shuffle=False)
 
         # Log stats
         _log_all_statistics(loaders)
