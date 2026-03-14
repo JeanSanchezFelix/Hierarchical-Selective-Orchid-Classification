@@ -32,7 +32,8 @@ class TaxonomicOrchidDataset(HierarchicalDataset):
         transform=None, 
         mode="train", 
         hierarchical_class_mode=False, 
-        use_minority_augmentation=True, 
+        use_class_balances=True,
+        use_minority_augmentation=True,
         minority_threshold=100,
         allowed_classes=None
     ):
@@ -55,12 +56,14 @@ class TaxonomicOrchidDataset(HierarchicalDataset):
         # Get genus-to-species mapping
         self.taxon = self.taxonomic_mapping()
         
-        #NOTE: TESTING PURPOSES ONLY
+        #!NOTE: TESTING PURPOSES ONLY
         print(f"\n[TaxonomicOrchidDataset] Initialized with:")
         print(f"  - Mode: {mode}")
         print(f"  - Classes' Structure: {'Hierarchical (all-species)' if hierarchical_class_mode else 'Flat (genera-only)'}")
         print(f"  - Number of classes: {len(self.classes)}")
         print(f"  - Total samples: {len(self.dataset)}")
+        print(f"  - Weights: {'Class Balanced' if use_class_balances else 'Default'}")
+        print(f"  - Minority Augmentation: {'Enabled' if use_minority_augmentation else 'Disabled'} (Threshold: {minority_threshold})")
         print(f"  - Classes: {self.classes}\n")
 
     def taxonomic_mapping(self):

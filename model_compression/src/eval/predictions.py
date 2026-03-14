@@ -1,11 +1,14 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Tuple
 
 def _compute_loss_and_predictions(
     outputs: torch.Tensor,
     labels: torch.Tensor,
-    criterion: nn.Module
+    criterion: nn.Module,
+    reduction: str = "mean",
+    sample_weights: torch.Tensor = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Compute loss, predicted probabilities, and predicted labels given model outputs and a loss function.
@@ -16,6 +19,8 @@ def _compute_loss_and_predictions(
         outputs: Raw model outputs (logits or probabilities).
         labels: Ground-truth labels (integer class indices or binary labels).
         criterion: A PyTorch loss module.
+        reduction: Reduction to apply when no per-sample weighting is requested.
+        sample_weights: Optional exterior per-sample pre-calculated class weights; if not provided, defaults to standard weights for loss computation.
 
     Returns:
         A tuple of (loss, probabilities, predictions):
@@ -30,27 +35,46 @@ def _compute_loss_and_predictions(
     if isinstance(criterion, nn.BCELoss):
         # BCELoss expects probabilities.
         probs = torch.sigmoid(outputs)
-        loss = criterion(probs, labels.float().unsqueeze(1))
+        if sample_weights is not None:
+            sample_weights = sample_weights.to(outputs.device).view(-1)
+            loss_raw = F.binary_cross_entropy(probs, labels.float().unsqueeze(1), reduction="none")
+            loss_per = loss_raw.mean(dim=1) if loss_raw.ndim > 1 else loss_raw.view(-1)
+            loss = (loss_per * sample_weights).mean()
+        else:
+            loss = F.binary_cross_entropy(probs, labels.float().unsqueeze(1), reduction=reduction)
         preds = (probs >= 0.5).float()
 
     elif isinstance(criterion, nn.BCEWithLogitsLoss):
         # BCEWithLogitsLoss expects raw logits.
-        loss = criterion(outputs, labels.float().unsqueeze(1))
+        if sample_weights is not None:
+            sample_weights = sample_weights.to(outputs.device).view(-1)
+            loss_raw = F.binary_cross_entropy_with_logits(outputs, labels.float().unsqueeze(1), reduction="none")
+            loss_per = loss_raw.mean(dim=1) if loss_raw.ndim > 1 else loss_raw.view(-1)
+            loss = (loss_per * sample_weights).mean()
+        else:
+            loss = F.binary_cross_entropy_with_logits(outputs, labels.float().unsqueeze(1), reduction=reduction)
         probs = torch.sigmoid(outputs)
         preds = (probs >= 0.5).float()
+
     # Multi-class classification
     elif isinstance(criterion, nn.CrossEntropyLoss):
         # CrossEntropyLoss expects raw logits and integer labels.
-        loss = criterion(outputs, labels)
+        class_weights = None
+        if sample_weights is not None:
+            sample_weights = sample_weights.to(outputs.device)
+            loss_per_sample = F.cross_entropy(outputs, labels.long(), weight=class_weights, reduction="none")
+            loss = (loss_per_sample * sample_weights).mean()
+        else:
+            loss = F.cross_entropy(outputs, labels.long(), reduction=reduction)
         probs = torch.softmax(outputs, dim=1)
         _, preds = torch.max(probs, dim=1)
 
     elif isinstance(criterion, nn.NLLLoss):
         # NLLLoss expects log-probabilities.
         outputs = torch.log_softmax(outputs, dim=1)
-        loss = criterion(outputs, labels)
+        loss = F.nll_loss(outputs, labels.long(), reduction=reduction)
         probs = torch.exp(outputs)
-        _, preds = torch.max(outputs, dim=1)
+        _, preds = torch.max(probs, dim=1)
     else:
         raise ValueError(f"Unsupported loss function: {criterion.__class__.__name__}")
 

@@ -354,7 +354,14 @@ def _train_one_epoch_kd(
     y_proba: List[List[float]] = []
 
     with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{num_epochs}", leave=True) as pbar:
-        for inputs, labels in train_loader:
+        for batch in train_loader:
+            if len(batch) == 3:
+                inputs, labels, sample_weights = batch
+                sample_weights = sample_weights.to(device)
+            else:
+                inputs, labels = batch
+                sample_weights = None
+
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad() # Zero gradients during training
 
@@ -369,7 +376,10 @@ def _train_one_epoch_kd(
             soft_loss = _compute_distillation_loss(teacher_logits=teacher_logits, student_logits=student_logits, T=temperature)
 
             # Compute the true label loss and obtain predictions/probabilities
-            label_loss, probs, preds = _compute_loss_and_predictions(student_logits, labels, criterion)
+            label_loss, probs, preds = _compute_loss_and_predictions(student_logits, labels, criterion,
+                reduction="none" if sample_weights is not None else "mean",
+                sample_weights=sample_weights
+            )
             
             # Combine the losses using the specified weights.
             loss = distill_loss_weight * soft_loss + ce_loss_weight * label_loss

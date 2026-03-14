@@ -45,12 +45,11 @@ def calculate_metrics(
 
     metrics = {
         "Accuracy": accuracy_score(y_true, y_pred),
-        "Recall": recall_score(y_true, y_pred, average=average),
-        "Precision": precision_score(y_true, y_pred, average=average),
-        "F1-Score": f1_score(y_true, y_pred, average=average),
+        "Recall": recall_score(y_true, y_pred, average=average, zero_division=0),
+        "Precision": precision_score(y_true, y_pred, average=average, zero_division=0),
+        "F1-Score": f1_score(y_true, y_pred, average=average, zero_division=0),
         "MCC": matthews_corrcoef(y_true, y_pred)
     }
-
     if y_proba is not None:
         if num_classes == 2:
             # For binary, assume probabilities for the positive class are in column index 1.

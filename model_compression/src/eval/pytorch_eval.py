@@ -20,7 +20,7 @@ from model_compression.src.utils.metrics import (
     plot_radar_chart,
     plot_calibration_curve,
 )
-from model_compression.src.eval.predictions import _compute_predictions
+from model_compression.src.eval.predictions import _compute_predictions, _compute_loss_and_predictions
 
 def test_inference(
     model: nn.Module,
@@ -65,23 +65,24 @@ def test_inference(
         raise RuntimeError("Dataset must define a 'classes' attribute.")
 
     with torch.no_grad():  # Disable gradient computation
-        for inputs, labels in tqdm(data_loader, desc="Inference Progress"):
-            
-            if len(classes) <= 2:   # Binary classification label adjustment
-                inputs, labels = inputs.to(device), labels.to(device).float().unsqueeze(1)
-            else:
-                inputs, labels = inputs.to(device), labels.to(device)
+        for batch in tqdm(data_loader, desc="Inference Progress"):
+            if isinstance(batch, (list, tuple)):
+                if len(batch) == 3:
+                    inputs, labels, _ = batch
+                else:
+                    inputs, labels = batch
+
+            inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
 
             batch_size = inputs.size(0)
             total_samples += batch_size
 
-            # Compute loss
             if criterion:
-                loss = criterion(outputs, labels)
+                loss, probs, preds = _compute_loss_and_predictions(outputs, labels, criterion)
                 total_loss += loss.item() * batch_size
-                
-            probs, preds = _compute_predictions(outputs)
+            else:
+                probs, preds = _compute_predictions(outputs)
 
             y_true.extend(labels.cpu().detach().numpy())
             y_pred.extend(preds.cpu().detach().numpy())

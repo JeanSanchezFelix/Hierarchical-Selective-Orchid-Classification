@@ -1,4 +1,6 @@
 import numpy as np
+import torch
+from PIL import Image
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from torchvision.datasets.folder import default_loader
@@ -6,6 +8,8 @@ from torch.utils.data import Dataset
 from collections import Counter
 import random
 import os
+
+Image.MAX_IMAGE_PIXELS = None
 
 class HierarchicalImageFolder(ImageFolder):
     """
@@ -62,25 +66,31 @@ class HierarchicalImageFolder(ImageFolder):
         all_classes.sort()
 
 
-        #NOTE: Add class weights to the selected ``allowed_classes`` to combat class imbalance
-        # class_weights = self.calculate_class_weights(all_classes)
-        # class_weights = {cls: 1.0 for cls in self.allowed_classes} if self.allowed_classes else {}
+        #!NOTE: REMOVE HARDCODED TEST LINE
+        # Search for the top 10 classes with the most samples and add them to allowed_classes
+        top_classes = {}
 
+        for cls in all_classes:
+            cls_path = os.path.join(directory, cls)
+            num_samples = sum([len(files) for r, d, files in os.walk(cls_path)])
+            top_classes[cls] = num_samples
+        top_classes = dict(sorted(top_classes.items(), key=lambda item: item[1], reverse=True)[:10])
+        print("Top 10 classes by number of samples:")
+        for cls, num_samples in top_classes.items():
+            print(f"Class: {cls}, Samples: {num_samples}")
 
+        self.allowed_classes = ["Dendrobium", "Spathoglottis", "Phalaenopsis", "Ionopsis", "Capilocentrum", "Stanhopea", "Bletia", "Arundina", "Guarianthe", "Polystachya"]
 
-        #NOTE: REMOVE HARDCODED TEST LINE
-        self.allowed_classes = ["Dendrobium"]
 
         if self.allowed_classes:
             # Only include specified classes, and create a 'Non-Selected' class for all others
             selected_classes = [cls for cls in all_classes if cls in self.allowed_classes]
             if not selected_classes:
                 raise ValueError("No matching classes found in dataset for allowed_classes.")
-            # Add 'Non-Selected' as the last class
+            
             selected_classes.append("Non-Selected")
             class_to_idx = {cls_name: idx for idx, cls_name in enumerate(selected_classes)}
         else:
-            # Normal behavior - use all classes
             selected_classes = all_classes
             class_to_idx = {cls_name: idx for idx, cls_name in enumerate(selected_classes)}
 
@@ -194,6 +204,7 @@ class HierarchicalDataset(Dataset):
             - If True, expects images organized in genus/species sub-folders (2-level).
             - If False, expects species-level folders only (1-level).        
         use_minority_augmentation (`bool`): Whether to apply augmentations only to minority classes.
+        use_class_balance (`bool`): Whether to compute and use class-balanced weights.
         minority_threshold (`int`): Threshold below which a class is considered a minority.
         allowed_classes (`list[str]`, optional): Classes to include. Others become 'Non-Selected'.
     """
@@ -203,11 +214,13 @@ class HierarchicalDataset(Dataset):
         transform=None,
         hierarchical_class_mode=True,
         use_minority_augmentation=False,
+        use_class_balance=True,
         minority_threshold=1000,
         aug_prob=0.5,
         allowed_classes=None
     ):
         self.use_minority_augmentation = use_minority_augmentation
+        self.use_class_balance = use_class_balance
         self.dataset = HierarchicalImageFolder(
             root_dir, 
             transform, 
@@ -219,6 +232,7 @@ class HierarchicalDataset(Dataset):
         # This is taken by torchvision datasets that it also searches for the class based on the directory names
         self.classes = self.dataset.classes
         self.aug_prob = aug_prob
+        self.num_classes = len(self.class_to_idx)
 
         if use_minority_augmentation:
             # Compute class distribution dynamically
@@ -234,6 +248,20 @@ class HierarchicalDataset(Dataset):
                 # transforms.ToTensor()
             ])
 
+        # Pre-compute class-balanced weights 
+        self.class_weights = None
+        if use_class_balance:
+            counts = np.bincount(self.targets, minlength=self.num_classes)
+            counts = torch.tensor(counts, dtype=torch.float32)
+
+            max_count = counts.max().clamp(min=1.0)
+            beta = 1.0 - 1.0 / max_count
+            effective_num = 1.0 - torch.pow(beta, counts)
+            class_weights = (1.0 - beta) / (effective_num + 1e-8)
+            class_weights = class_weights / class_weights.sum() * self.num_classes
+
+            self.class_weights = class_weights
+
     def __len__(self):
         return len(self.dataset)
 
@@ -243,6 +271,10 @@ class HierarchicalDataset(Dataset):
         # Apply augmentation with probability `self.aug_prob`
         if self.use_minority_augmentation and label in self.minority_classes and random.random() < self.aug_prob:
             img = self.minority_transform(img)
+
+        if self.use_class_balance and self.class_weights is not None:
+            balanced_weight = self.class_weights[label]
+            return img, label, balanced_weight
 
         return img, label
 

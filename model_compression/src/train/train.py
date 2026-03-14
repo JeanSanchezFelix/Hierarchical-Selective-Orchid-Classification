@@ -259,12 +259,27 @@ def _train_one_epoch(
     y_proba: List[List[float]] = []
 
     with tqdm(total=len(train_loader), desc=f"Train Epoch {epoch + 1}/{num_epochs}", leave=True) as pbar:
-        for inputs, labels in train_loader:
+        # for inputs, labels in train_loader:
+        #     inputs, labels = inputs.to(device), labels.to(device)
+        #     optimizer.zero_grad() # Zero gradients during training
+
+        for batch in train_loader:
+            if len(batch) == 3:
+                inputs, labels, sample_weights = batch
+                sample_weights = sample_weights.to(device)
+            else:
+                inputs, labels = batch
+                sample_weights = None
+
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad() # Zero gradients during training
 
             outputs = model(inputs)
-            loss, probs, preds = _compute_loss_and_predictions(outputs, labels, criterion)
+            
+            loss, probs, preds = _compute_loss_and_predictions(outputs, labels, criterion,
+                reduction="none" if sample_weights is not None else "mean",
+                sample_weights=sample_weights
+            )
             loss.backward()
             optimizer.step()
 
