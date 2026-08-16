@@ -8,6 +8,8 @@ from model_compression.src.orchid.calibration import UnknownPolicy, apply_unknow
 from model_compression.src.orchid.phylogeny import build_distance_matrix, build_posterior_distance_summary, mean_phylogenetic_error
 from model_compression.src.orchid.routing import HierarchicalCascadeRouter
 from model_compression.src.orchid.evaluation import EvaluationRecord, summarize_records, write_evaluation_report
+from model_compression.src.orchid.deployment_manifest import deployment_entry, make_deployment_manifest
+from model_compression.src.orchid.model_packs import create_model_pack, install_model_pack
 
 
 class TestOrchidDistanceMatrix(unittest.TestCase):
@@ -50,6 +52,22 @@ class TestOrchidDistanceMatrix(unittest.TestCase):
             output = write_evaluation_report(records, summary, directory)
             self.assertTrue((output / "metrics.json").is_file())
             self.assertTrue((output / "predictions.csv").is_file())
+
+    def test_compressed_model_pack_round_trip(self):
+        metadata = {"task": "genus", "class_labels": ["A"], "model_name": "mobilenet_v2", "img_size": 224, "normalization": {"mean": [0], "std": [1]}}
+        expert_metadata = {**metadata, "task": "genus_species", "target_genus": "A", "class_labels": ["A::one"]}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "router.tflite").write_bytes(b"router")
+            (root / "expert_A.tflite").write_bytes(b"expert")
+            manifest = make_deployment_manifest([
+                deployment_entry(root / "router.tflite", metadata, "router"),
+                deployment_entry(root / "expert_A.tflite", expert_metadata, "expert", "A"),
+            ])
+            pack = create_model_pack(manifest, root, root / "pack.zip")
+            cache = install_model_pack(pack, root / "cache")
+            self.assertTrue((cache / "models" / "router.tflite").is_file())
+            self.assertTrue((cache / "models" / "expert_A.tflite").is_file())
 
 
 if __name__ == "__main__":

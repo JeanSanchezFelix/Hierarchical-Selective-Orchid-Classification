@@ -93,6 +93,25 @@ When coverage is ready, add `--phylogeny-tree-directory` and
 `--phylogeny-mapping`; the evaluator will use the posterior-mean distance matrix
 and include `mean_phylogenetic_error` in `metrics.json`.
 
+## LiteRT export and compressed model packs
+
+Export each finalized checkpoint with a distinct filename, then merge the emitted
+entry manifests and pack them. A pack is ZIP-deflated for compressed-at-rest storage;
+on installation it is safely extracted into a cache and every model checksum is
+verified before use.
+
+```powershell
+conda run -n orchid_edge python scripts/export_orchid_litert.py `
+  --checkpoint artifacts/orchid/genus_router/mobilenet_v2/checkpoints/best_orchid_model.pt `
+  --output artifacts/orchid/genus_router/mobilenet_v2/exports/router.tflite `
+  --role router --entry-output artifacts/orchid/genus_router/mobilenet_v2/exports/router_entry.json
+```
+
+Run the same command for each expert with `--role expert --genus <Genus>`. Then use
+`build_orchid_deployment_manifest.py` followed by `package_orchid_models.py` to
+create one verified pack. Export intentionally does not silently quantize models:
+each quantization setting must be evaluated as its own experiment before deployment.
+
 ## Cascade decision contract
 
 `HierarchicalCascadeRouter` receives router logits and the logits returned by the
