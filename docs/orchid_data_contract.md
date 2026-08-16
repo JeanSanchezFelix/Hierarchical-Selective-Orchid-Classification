@@ -76,3 +76,20 @@ whose label order or preprocessing differs.
 `scripts/run_orchid_evaluation.py` currently validates and records an evaluation
 request only. It cannot and does not report cascade results until Phase 7 implements
 the routing and metric evaluator.
+
+## Cascade decision contract
+
+`HierarchicalCascadeRouter` receives router logits and the logits returned by the
+available selected genus experts. It deterministically selects the top one or top
+two genera and scores each candidate species using:
+
+```text
+P(genus | image) × P(species | selected genus, image)
+```
+
+The result retains both the unnormalized `joint_probability` and a
+`fused_probability` normalized over the experts actually evaluated. If a selected
+expert is absent, routing continues with the available selected experts and records
+`missing_expert:<genus>`; if none are available it returns no species prediction.
+Phase 6 will convert low-confidence or incomplete-routing outcomes into the
+user-facing **Unknown** decision using validation-set calibration.
