@@ -8,7 +8,6 @@ taxonomy and run provenance.
 from __future__ import annotations
 
 import copy
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -130,17 +129,3 @@ def run_training(config: dict[str, Any], artifact_root: str | Path = "artifacts/
         },
     )
     return layout.experiment_dir
-
-
-def write_evaluation_request(config_path: str | Path, output_root: str | Path = "artifacts/orchid") -> Path:
-    """Record a validated cascade-evaluation request until Phase 7 adds execution."""
-    config = load_orchid_config(config_path)
-    layout = OrchidArtifactLayout.create(output_root, config["experiment_id"])
-    output = layout.reports_dir / "evaluation_request.json"
-    payload = {
-        "schema_version": 1,
-        "status": "registered_pending_phase_7_evaluator",
-        "config": config,
-    }
-    output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    return output

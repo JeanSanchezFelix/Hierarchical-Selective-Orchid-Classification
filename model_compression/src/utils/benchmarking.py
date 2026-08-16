@@ -317,7 +317,7 @@ def measure_power_consumption(
 
     For CUDA devices, uses nvidia-smi with a background thread.
     For CPU devices, if pyRAPL is available, uses it to measure energy consumption.
-    A warm-up phase is performed before measurement.
+    A warm-up period is performed before measurement.
 
     Args:
         model: Model to evaluate.

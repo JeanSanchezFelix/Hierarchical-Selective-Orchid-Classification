@@ -109,6 +109,13 @@ repository/
 
 ## How to Use
 
+### Orchid hierarchical pipeline
+
+The orchid-specific workflow, reproducible configurations, deployment pack format,
+and paper-ready experiment protocol are documented in
+[`docs/orchid_experiments.md`](docs/orchid_experiments.md). The private images and
+generated model artifacts remain excluded from version control.
+
 ### 1. Clone the Repository
 ```bash
 git clone https://github.com/yourusername/model-compression.git

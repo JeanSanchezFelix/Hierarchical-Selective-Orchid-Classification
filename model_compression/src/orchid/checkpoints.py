@@ -8,8 +8,6 @@ from typing import Any, Mapping
 
 import torch
 
-from model_compression.src.utils.callbacks.callbacks import Callback
-
 
 CHECKPOINT_SCHEMA_VERSION = 1
 
@@ -56,7 +54,7 @@ def load_orchid_checkpoint(path: str | Path, map_location: str | torch.device = 
     return payload
 
 
-class OrchidModelCheckpoint(Callback):
+class OrchidModelCheckpoint:
     """Save the lowest-validation-loss model in the portable orchid bundle format."""
 
     def __init__(self, save_path: str | Path, metadata: Mapping[str, Any], monitor: str = "val_loss", mode: str = "min"):
@@ -67,6 +65,15 @@ class OrchidModelCheckpoint(Callback):
         self.monitor = monitor
         self.mode = mode
         self.best_score = float("inf") if mode == "min" else float("-inf")
+
+    def on_train_start(self, logs: dict[str, Any] | None = None) -> None:
+        pass
+
+    def on_epoch_start(self, epoch: int, logs: dict[str, Any] | None = None) -> None:
+        pass
+
+    def on_train_end(self, logs: dict[str, Any] | None = None) -> None:
+        pass
 
     def on_epoch_end(self, epoch: int, logs: dict[str, Any] | None = None) -> None:
         logs = logs or {}

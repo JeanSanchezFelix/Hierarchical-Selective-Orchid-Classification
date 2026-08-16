@@ -38,14 +38,14 @@ loaders = load_data(
 
 ## Artifacts
 
-Future train and export scripts create an `OrchidArtifactLayout` under a named
+Training and export scripts create an `OrchidArtifactLayout` under a named
 experiment directory. It reserves `checkpoints/`, `exports/`, and `reports/`, plus
 `taxonomy.json` and `run_metadata.json`. These files contain labels and provenance,
 not private image data.
 
 The phylogenetic source, label mapping, unmatched labels, and derived distance
-matrix will be added in Phase 6. Phylogenetic metrics will only be calculated for
-labels that map to a vetted source tree.
+matrix are versioned alongside each analysis. Phylogenetic metrics are calculated
+only for labels that map to a vetted source tree.
 
 ## Reproducible experiment entry points
 
@@ -126,12 +126,12 @@ The result retains both the unnormalized `joint_probability` and a
 `fused_probability` normalized over the experts actually evaluated. If a selected
 expert is absent, routing continues with the available selected experts and records
 `missing_expert:<genus>`; if none are available it returns no species prediction.
-Phase 6 will convert low-confidence or incomplete-routing outcomes into the
-user-facing **Unknown** decision using validation-set calibration.
+Low-confidence or incomplete-routing outcomes are converted into the user-facing
+**Unknown** decision using validation-set calibration.
 
 ## Calibration and Unknown
 
-Phase 6 calibrates a scalar temperature on a held-out validation set, then derives
+The calibration module fits a scalar temperature on a held-out validation set, then derives
 the router, joint-species, and candidate-margin thresholds from a chosen known-taxon
 coverage target. It returns **Unknown (best candidate: …, score: …)**, matching the
 app's intended UI. These thresholds control abstention on known taxa only. Do not
