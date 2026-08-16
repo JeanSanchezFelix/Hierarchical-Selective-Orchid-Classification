@@ -21,7 +21,8 @@ def main():
         test_split=args['TEST_SPLIT'],
         img_size=args['IMG_SIZE'],  
         use_augmentation=args['DATA_AUGMENTATION'],
-        use_sampler=args['SAMPLER']
+        use_sampler=args['SAMPLER'],
+        split_manifest=args['SPLIT_MANIFEST'],
     )
 
     # Step 3: Train the models

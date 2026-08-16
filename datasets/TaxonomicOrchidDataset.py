@@ -42,12 +42,13 @@ class TaxonomicOrchidDataset(HierarchicalDataset):
         self.use_minority_augmentation = use_minority_augmentation
 
         super().__init__(
-            self.rootDir, 
-            transform, 
-            hierarchical_class_mode, 
-            use_minority_augmentation, 
-            minority_threshold,
-            allowed_classes=allowed_classes  
+            root_dir=self.rootDir,
+            transform=transform,
+            hierarchical_class_mode=hierarchical_class_mode,
+            use_minority_augmentation=use_minority_augmentation,
+            use_class_balance=use_class_balances,
+            minority_threshold=minority_threshold,
+            allowed_classes=allowed_classes,
         )
 
         # Multi-class mapping

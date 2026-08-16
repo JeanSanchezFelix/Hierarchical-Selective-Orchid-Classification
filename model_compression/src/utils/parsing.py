@@ -86,6 +86,9 @@ def _validate_args(
     pw = args.get('pretrained_weights')
     if pw and not os.path.isfile(pw):
         raise ValueError(f"Pretrained weights not found: {pw}")
+    split_manifest = args.get('split_manifest')
+    if split_manifest and not os.path.isfile(split_manifest):
+        raise ValueError(f"Split manifest not found: {split_manifest}")
 
     # Log configuration
     logging.info("Training configuration:")
@@ -138,6 +141,12 @@ def parse() -> dict[str, int | str | list]:
     data_group = parser.add_argument_group("Data Parameters")
     data_group.add_argument("--train_split", type=float, default=0.8, help="Proportion of data for training (0.0-1.0).")
     data_group.add_argument("--test_split", type=float, default=0.1, help="Proportion of data for testing (0.0-1.0).")
+    data_group.add_argument(
+        "--split_manifest",
+        type=str,
+        default=None,
+        help="Reviewed CSV split manifest. Overrides automatic splitting when provided.",
+    )
     data_group.add_argument("--data_augmentation", action="store_true", default=0, help="Enable data augmentation: 0 (False), 1 (True).")
     data_group.add_argument("--sampler", action="store_true", default=0, help="Enable weighted sampler: 0 (False), 1 (True).")
     data_group.add_argument("--class_weights", action="store_true", default=0, help="Enable class weights: 0 (False), 1 (True).")
@@ -235,6 +244,7 @@ def parse() -> dict[str, int | str | list]:
         'OPTIMIZER': config['optimizer'],
         'TRAIN_SPLIT': config['train_split'],
         'TEST_SPLIT': config['test_split'],
+        'SPLIT_MANIFEST': config['split_manifest'],
         'DATA_AUGMENTATION': config['data_augmentation'],
         'SAMPLER': config['sampler'],
         'CLASS_WEIGHTS': config['class_weights'],

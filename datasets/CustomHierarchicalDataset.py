@@ -66,22 +66,6 @@ class HierarchicalImageFolder(ImageFolder):
         all_classes.sort()
 
 
-        #!NOTE: REMOVE HARDCODED TEST LINE
-        # Search for the top 10 classes with the most samples and add them to allowed_classes
-        top_classes = {}
-
-        for cls in all_classes:
-            cls_path = os.path.join(directory, cls)
-            num_samples = sum([len(files) for r, d, files in os.walk(cls_path)])
-            top_classes[cls] = num_samples
-        top_classes = dict(sorted(top_classes.items(), key=lambda item: item[1], reverse=True)[:10])
-        print("Top 10 classes by number of samples:")
-        for cls, num_samples in top_classes.items():
-            print(f"Class: {cls}, Samples: {num_samples}")
-
-        self.allowed_classes = ["Dendrobium", "Spathoglottis", "Phalaenopsis", "Ionopsis", "Capilocentrum", "Stanhopea", "Bletia", "Arundina", "Guarianthe", "Polystachya"]
-
-
         if self.allowed_classes:
             # Only include specified classes, and create a 'Non-Selected' class for all others
             selected_classes = [cls for cls in all_classes if cls in self.allowed_classes]
@@ -147,7 +131,7 @@ class HierarchicalImageFolder(ImageFolder):
                 # Now traverse the subfolder structure (genus/species/images)
                 for subfolder in sorted(os.listdir(cls_path)):
                     subfolder_path = os.path.join(cls_path, subfolder)
-                    if not os.path.isdir(subfolder_path):
+                    if not os.path.isdir(subfolder_path) or subfolder.upper() == "UNLABELED":
                         continue
 
                     for fname in sorted(os.listdir(subfolder_path)):
