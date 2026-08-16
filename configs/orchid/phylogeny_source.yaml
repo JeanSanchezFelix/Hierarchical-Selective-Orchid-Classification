@@ -1,0 +1,12 @@
+source:
+  citation: "Pérez-Escobar et al. (2024), The origin and speciation of orchids, New Phytologist 242:700–716."
+  article_doi: "10.1111/nph.19580"
+  data_doi: "10.6084/m9.figshare.22245940.v1"
+  license: "CC BY 4.0"
+  archive: data/phylogeny/perez_escobar_2024/10.PPtrees.AAR.rar
+  archive_md5: "64b3dc228074297e0b516d7ce6a3d229"
+  extracted_tree_directory: data/phylogeny/perez_escobar_2024/extracted
+  aggregation: posterior_mean_and_standard_deviation_over_all_10_trees
+mapping:
+  path: artifacts/orchid/phylogeny/species_mapping.csv
+  minimum_coverage: 0.90

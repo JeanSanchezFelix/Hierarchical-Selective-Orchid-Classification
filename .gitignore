@@ -9,6 +9,7 @@ __pycache__/
 # Folders
 data/
 artifacts/leakage_audit/
+artifacts/orchid/
 
 
 # Distribution / packaging

@@ -93,3 +93,36 @@ expert is absent, routing continues with the available selected experts and reco
 `missing_expert:<genus>`; if none are available it returns no species prediction.
 Phase 6 will convert low-confidence or incomplete-routing outcomes into the
 user-facing **Unknown** decision using validation-set calibration.
+
+## Calibration and Unknown
+
+Phase 6 calibrates a scalar temperature on a held-out validation set, then derives
+the router, joint-species, and candidate-margin thresholds from a chosen known-taxon
+coverage target. It returns **Unknown (best candidate: …, score: …)**, matching the
+app's intended UI. These thresholds control abstention on known taxa only. Do not
+claim non-orchid open-set performance until a separately held-out non-orchid set is
+evaluated.
+
+## Phylogenetic error cost
+
+The optional source is Pérez-Escobar et al. (2024), *The origin and speciation of
+orchids*, New Phytologist, DOI `10.1111/nph.19580`. Its CC-BY 4.0 Figshare record,
+DOI `10.6084/m9.figshare.22245940.v1`, provides the 10 posterior species trees used
+by this pipeline. The downloaded source archive is intentionally under ignored
+`data/` and is checksum-verified against the published MD5 before use.
+
+```powershell
+conda run -n orchid_edge python scripts/prepare_orchid_phylogeny.py `
+  --dataset-root data/taxonomic-orchid/TaxonomicOrchidDataset
+```
+
+This writes a review-required mapping CSV. Fill `source_tip` only after checking
+accepted scientific names and set `mapping_status` to `matched`; cultivars, hybrids,
+synonyms, and unresolved labels stay unmatched. The phylogenetic metric refuses to
+run below 90% coverage by default. It reports mean normalized patristic error as a
+secondary safety analysis, never as a substitute for top-1 accuracy.
+
+All ten released posterior trees are used: the pipeline reports the posterior mean
+distance matrix and its standard deviation rather than choosing a single topology.
+The pinned archive, checksum, license, and aggregation rule are recorded in
+`configs/orchid/phylogeny_source.yaml`.
