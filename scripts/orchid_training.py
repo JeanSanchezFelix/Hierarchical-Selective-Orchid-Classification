@@ -69,7 +69,9 @@ def run_training(config: dict[str, Any], artifact_root: str | Path = "artifacts/
         "root_dir": str(root_dir),
         "task": dataset_config["task"],
         "target_genus": dataset_config.get("target_genus"),
-        "use_class_balances": bool(training.get("class_weights", False)),
+        # Loss-level class weights are calculated by ``transfer_learning``.
+        # Returning per-sample weights here would apply imbalance correction twice.
+        "use_class_balances": False,
         "use_minority_augmentation": False,
     }
     inventory = TaxonomicOrchidDataset(**dataset_kwargs)
@@ -85,6 +87,9 @@ def run_training(config: dict[str, Any], artifact_root: str | Path = "artifacts/
             "target_genus": dataset_config.get("target_genus"),
             "class_labels": inventory.classes,
             "training": training,
+            "model_name": training.get("model_name", "mobilenet_v2"),
+            "img_size": int(training.get("img_size", 224)),
+            "normalization": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
         },
     )
     loaders = load_data(
@@ -107,6 +112,17 @@ def run_training(config: dict[str, Any], artifact_root: str | Path = "artifacts/
         callbacks=None,
         pretrained_weights_path=training.get("pretrained_weights"),
         use_class_weights=bool(training.get("class_weights", False)),
+        orchid_checkpoint_path=str(layout.checkpoints_dir / "best_orchid_model.pt"),
+        orchid_checkpoint_metadata={
+            "task": dataset_config["task"],
+            "target_genus": dataset_config.get("target_genus"),
+            "class_labels": inventory.classes,
+            "model_name": training.get("model_name", "mobilenet_v2"),
+            "img_size": int(training.get("img_size", 224)),
+            "normalization": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+            "taxonomy_path": str(layout.taxonomy_path),
+            "split_manifest": str(manifest),
+        },
     )
     return layout.experiment_dir
 

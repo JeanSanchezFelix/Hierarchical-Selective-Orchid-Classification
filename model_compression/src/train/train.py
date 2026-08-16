@@ -1,7 +1,7 @@
 import os
 import time
 import logging
-from typing import Callable, Optional, Any, Dict, List
+from typing import Callable, Optional, Any, Dict, List, Mapping
 
 import numpy as np
 import torch
@@ -14,6 +14,7 @@ from model_compression.src.utils.callbacks import Callback
 from model_compression.src.utils.metrics import plot_train_val_curve, plot_log_loss, calculate_metrics
 from model_compression.src.utils.model_setup import tf_setup
 from model_compression.src.eval import test_inference, _compute_loss_and_predictions
+from model_compression.src.orchid.checkpoints import OrchidModelCheckpoint, load_orchid_checkpoint
 
 def transfer_learning(
     model_name: str,
@@ -27,6 +28,8 @@ def transfer_learning(
     pretrained_weights_path: Optional[str] = None,
     use_class_weights: bool = False,
     freeze_base_layers: bool = True,
+    orchid_checkpoint_path: Optional[str] = None,
+    orchid_checkpoint_metadata: Optional[Mapping[str, Any]] = None,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ) -> nn.Module:
     """
@@ -44,6 +47,8 @@ def transfer_learning(
         pretrained_weights_path: Path to pretrained weights file for fine-tuning.
         use_class_weights: Whether to compute and apply class weights.
         freeze_base_layers: Whether to freeze all layers except classifier.
+        orchid_checkpoint_path: Optional destination for a self-describing best-model bundle.
+        orchid_checkpoint_metadata: Required provenance when ``orchid_checkpoint_path`` is set.
         device: Computation device.
 
     Returns:
@@ -98,9 +103,15 @@ def transfer_learning(
     model.to(device)
     logging.info(f"Model moved to device: {device}")
 
+    active_callbacks = list(callbacks or [])
+    if orchid_checkpoint_path:
+        if not orchid_checkpoint_metadata:
+            raise ValueError("orchid_checkpoint_metadata is required with orchid_checkpoint_path.")
+        active_callbacks.append(OrchidModelCheckpoint(orchid_checkpoint_path, orchid_checkpoint_metadata))
+
     # Notify callbacks of training start
-    if callbacks:
-        for callback in callbacks:
+    if active_callbacks:
+        for callback in active_callbacks:
             callback.on_train_start(logs={})
 
     # Training and evaluation loop
@@ -114,22 +125,26 @@ def transfer_learning(
         criterion=criterion,
         optimizer=optimizer,
         num_epochs=num_epochs,
-        callbacks=callbacks or [],
+        callbacks=active_callbacks,
         device=device
     )
     elapsed = time.time() - start_time
     logging.info(f"Training completed in {elapsed // 60:.0f}m {elapsed % 60:.0f}s")
 
     # Trigger training end callbacks.
-    if callbacks:
-        for callback in callbacks:
+    if active_callbacks:
+        for callback in active_callbacks:
             callback.on_train_end(logs={"model": model, "optimizer": optimizer})
 
     # Load best model checkpoint
-    checkpoint_path = os.path.join(save_dir, f"{model_name}_best_model.pth")
+    checkpoint_path = orchid_checkpoint_path or os.path.join(save_dir, f"{model_name}_best_model.pth")
     try:
-        model_data = torch.load(checkpoint_path, weights_only=True)
-        model.load_state_dict(model_data)
+        if orchid_checkpoint_path:
+            model_data = load_orchid_checkpoint(checkpoint_path, map_location=device)
+            model.load_state_dict(model_data["model_state_dict"])
+        else:
+            model_data = torch.load(checkpoint_path, weights_only=True)
+            model.load_state_dict(model_data)
         model.eval()
         logging.info(f"Best model weights loaded from: {checkpoint_path}")
     except Exception as e:
@@ -214,7 +229,7 @@ def _train_and_evaluate(
 
         logging.info(f"Val Loss: {val_loss:.4f}")
         logging.info("Val Metrics: " + ", ".join([f"{key.lower()}: {value:.4f}" for key, value in val_metrics.items() if key != "loss"]))
-        logs.update({"val_loss": val_loss, **{f"val_{key.lower()}": value for key, value in val_metrics.items() if key != "loss"}})
+        logs.update({"val_loss": val_loss, "history": history, **{f"val_{key.lower()}": value for key, value in val_metrics.items() if key != "loss"}})
 
         # End epoch callbacks
         for callback in callbacks:

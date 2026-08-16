@@ -63,6 +63,16 @@ conda run -n orchid_edge python scripts/train_orchid_experts.py --genus Dendrobi
 after the router and a representative expert have been checked. Each run writes
 label and configuration provenance under `artifacts/orchid/<experiment-id>/`.
 
+## Checkpoint bundles
+
+Every launcher writes its best validation-loss model to
+`checkpoints/best_orchid_model.pt`. This is a versioned PyTorch bundle, not a raw
+`state_dict`; it stores the class-label order, task, optional target genus, model
+name, input size, ImageNet normalization, split-manifest path, and taxonomy file
+reference with the weights. Export and routing code must load this bundle through
+`load_orchid_checkpoint`, so a router cannot accidentally be paired with an expert
+whose label order or preprocessing differs.
+
 `scripts/run_orchid_evaluation.py` currently validates and records an evaluation
 request only. It cannot and does not report cascade results until Phase 7 implements
 the routing and metric evaluator.
