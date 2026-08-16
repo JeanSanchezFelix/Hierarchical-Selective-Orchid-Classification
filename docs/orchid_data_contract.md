@@ -73,9 +73,25 @@ reference with the weights. Export and routing code must load this bundle throug
 `load_orchid_checkpoint`, so a router cannot accidentally be paired with an expert
 whose label order or preprocessing differs.
 
-`scripts/run_orchid_evaluation.py` currently validates and records an evaluation
-request only. It cannot and does not report cascade results until Phase 7 implements
-the routing and metric evaluator.
+Evaluate only the held-out manifest test split with explicit, self-describing model
+bundles. The command writes `metrics.json` and image-level `predictions.csv`; it
+does not evaluate on train or validation images.
+
+```powershell
+conda run -n orchid_edge python scripts/run_orchid_evaluation.py `
+  --router-checkpoint artifacts/orchid/genus_router/mobilenet_v2/checkpoints/best_orchid_model.pt `
+  --expert-checkpoint Dendrobium=artifacts/orchid/species_experts/mobilenet_v2/Dendrobium/checkpoints/best_orchid_model.pt
+```
+
+Add `--unknown-policy path/to/policy.json` only after fitting thresholds on the
+validation split. The reported metrics include router top-1/top-2 genus accuracy,
+cascade species accuracy, known coverage, selective species accuracy, Unknown rate,
+and taxonomic error cost. Phylogenetic error is added only after the reviewed mapping
+reaches the configured coverage gate.
+
+When coverage is ready, add `--phylogeny-tree-directory` and
+`--phylogeny-mapping`; the evaluator will use the posterior-mean distance matrix
+and include `mean_phylogenetic_error` in `metrics.json`.
 
 ## Cascade decision contract
 

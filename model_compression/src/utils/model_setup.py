@@ -12,7 +12,8 @@ from model_compression.src.utils.data_imbalance import calculate_model_weights
 def setup_model(
     model_name: str, 
     pretrained_weights_path: Optional[str], 
-    num_classes: int
+    num_classes: int,
+    use_imagenet_weights: bool = True,
 ) -> nn.Module:
     """
     Set up a pre-trained model with a custom classification head and optionally load custom weights.
@@ -38,7 +39,7 @@ def setup_model(
     # If a valid custom weights path is provided, use random initialization (None) to allow loading later.
     # Otherwise, use the default pre-trained weights.
     use_custom_weights = bool(pretrained_weights_path and pretrained_weights_path.strip())
-    weights_arg = None if use_custom_weights else 'DEFAULT'
+    weights_arg = None if use_custom_weights or not use_imagenet_weights else 'DEFAULT'
     
     # Configure the model based on the model name
     model_name_lower = model_name.lower()

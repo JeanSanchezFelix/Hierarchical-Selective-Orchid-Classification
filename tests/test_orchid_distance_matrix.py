@@ -7,6 +7,7 @@ import numpy as np
 from model_compression.src.orchid.calibration import UnknownPolicy, apply_unknown_policy
 from model_compression.src.orchid.phylogeny import build_distance_matrix, build_posterior_distance_summary, mean_phylogenetic_error
 from model_compression.src.orchid.routing import HierarchicalCascadeRouter
+from model_compression.src.orchid.evaluation import EvaluationRecord, summarize_records, write_evaluation_report
 
 
 class TestOrchidDistanceMatrix(unittest.TestCase):
@@ -36,6 +37,19 @@ class TestOrchidDistanceMatrix(unittest.TestCase):
             self.assertEqual(posterior_labels, labels)
             self.assertTrue(np.allclose(posterior_mean, matrix))
             self.assertTrue(np.allclose(posterior_std, 0.0))
+
+    def test_evaluation_summary_and_report(self):
+        records = [
+            EvaluationRecord("A::one", "A", "A::one", "A", "A", ("A", "B"), 0.8, False, None),
+            EvaluationRecord("B::one", "B", "A::one", "A", "A", ("A", "B"), 0.4, True, "low_genus_confidence"),
+        ]
+        summary = summarize_records(records)
+        self.assertEqual(summary["n_test_images"], 2)
+        self.assertEqual(summary["unknown_rate"], 0.5)
+        with tempfile.TemporaryDirectory() as directory:
+            output = write_evaluation_report(records, summary, directory)
+            self.assertTrue((output / "metrics.json").is_file())
+            self.assertTrue((output / "predictions.csv").is_file())
 
 
 if __name__ == "__main__":
