@@ -9,7 +9,65 @@ from collections import Counter
 import random
 import os
 
+from model_compression.src.orchid.constants import (
+    TASK_FLAT_SPECIES,
+    TASK_GENUS,
+    TASK_GENUS_SPECIES,
+    TASK_TARGET_GENUS,
+)
+from model_compression.src.orchid.taxonomy import OrchidTaxonomy, scan_orchid_taxonomy
+
 Image.MAX_IMAGE_PIXELS = None
+
+
+class OrchidTaskImageFolder(ImageFolder):
+    """Explicit labels for the orchid router, flat baseline, and genus experts.
+
+    Unlike ``ImageFolder``, this class understands the fixed ``Genus/Species``
+    hierarchy and never uses an unqualified species folder as an identifier.
+    """
+
+    def __init__(self, root, task=TASK_GENUS, target_genus=None, transform=None, **kwargs):
+        self.task = task
+        self.target_genus = target_genus
+        self.taxonomy: OrchidTaxonomy = scan_orchid_taxonomy(root)
+        self._validate_task()
+        super().__init__(root, transform=transform, **kwargs)
+
+    def _validate_task(self):
+        if self.task not in {TASK_GENUS, TASK_FLAT_SPECIES, TASK_GENUS_SPECIES, TASK_TARGET_GENUS}:
+            raise ValueError(f"Unsupported orchid task '{self.task}'.")
+        if self.task in {TASK_GENUS_SPECIES, TASK_TARGET_GENUS}:
+            if not self.target_genus:
+                raise ValueError(f"task='{self.task}' requires target_genus.")
+            self.taxonomy.require_genus(self.target_genus)
+
+    def find_classes(self, directory):
+        classes = list(self.taxonomy.labels_for_task(self.task, self.target_genus))
+        return classes, {name: index for index, name in enumerate(classes)}
+
+    def make_dataset(self, directory, class_to_idx, extensions=None, is_valid_file=None, allow_empty=False):
+        instances = []
+        root = os.path.abspath(directory)
+        for record in self.taxonomy.records:
+            if self.task in {TASK_GENUS_SPECIES, TASK_TARGET_GENUS} and record.genus_id != self.target_genus:
+                continue
+            if self.task == TASK_GENUS:
+                label_name = record.genus_id
+            else:
+                label_name = record.species_id
+            species_dir = os.path.join(root, record.genus_id, record.species_name)
+            for current_root, _, filenames in os.walk(species_dir):
+                for filename in sorted(filenames):
+                    path = os.path.join(current_root, filename)
+                    if is_valid_file and not is_valid_file(path):
+                        continue
+                    if extensions and not path.lower().endswith(extensions):
+                        continue
+                    instances.append((path, class_to_idx[label_name]))
+        if not instances and not allow_empty:
+            raise FileNotFoundError(f"No image files found for orchid task '{self.task}'.")
+        return instances
 
 class HierarchicalImageFolder(ImageFolder):
     """

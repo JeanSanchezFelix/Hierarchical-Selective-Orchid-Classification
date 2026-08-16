@@ -6,7 +6,8 @@ from torchvision import datasets, transforms
 from torch.utils.data import Dataset, Subset
 from sklearn.model_selection import train_test_split
 from collections import defaultdict
-from datasets.CustomHierarchicalDataset import HierarchicalDataset
+from datasets.CustomHierarchicalDataset import HierarchicalDataset, OrchidTaskImageFolder
+from model_compression.src.orchid.constants import TASK_FLAT_SPECIES, TASK_GENUS, TASK_GENUS_SPECIES, TASK_TARGET_GENUS
 
 class TaxonomicOrchidDataset(HierarchicalDataset):
     """
@@ -31,41 +32,95 @@ class TaxonomicOrchidDataset(HierarchicalDataset):
         self, 
         transform=None, 
         mode="train", 
-        hierarchical_class_mode=False, 
+        hierarchical_class_mode=None,
         use_class_balances=True,
         use_minority_augmentation=True,
         minority_threshold=100,
-        allowed_classes=None
+        allowed_classes=None,
+        root_dir=None,
+        task=None,
+        target_genus=None,
     ):
         self.name = "Taxonomic Orchid Dataset (TOD)"
         self.mode = mode
         self.use_minority_augmentation = use_minority_augmentation
+        self.rootDir = root_dir or type(self).rootDir
+        # Preserve the legacy bool option while making every new task explicit.
+        if task is None:
+            task = TASK_FLAT_SPECIES if hierarchical_class_mode else TASK_GENUS
+        if task not in {TASK_GENUS, TASK_FLAT_SPECIES, TASK_GENUS_SPECIES, TASK_TARGET_GENUS}:
+            raise ValueError(f"Unsupported orchid task '{task}'.")
+        if allowed_classes is not None:
+            raise ValueError("allowed_classes is not supported for explicit orchid tasks; use target_genus instead.")
+        self.task = task
+        self.target_genus = target_genus
 
-        super().__init__(
-            root_dir=self.rootDir,
+        # This remains a HierarchicalDataset-compatible object: callers retain
+        # ``classes``, ``targets``, class weights, and the standard __getitem__.
+        self.use_class_balance = use_class_balances
+        self.dataset = OrchidTaskImageFolder(
+            self.rootDir,
+            task=task,
+            target_genus=target_genus,
             transform=transform,
-            hierarchical_class_mode=hierarchical_class_mode,
-            use_minority_augmentation=use_minority_augmentation,
-            use_class_balance=use_class_balances,
-            minority_threshold=minority_threshold,
-            allowed_classes=allowed_classes,
         )
+        self.targets = np.array(self.dataset.targets)
+        self.class_to_idx = self.dataset.class_to_idx
+        self.classes = self.dataset.classes
+        self.aug_prob = 0.5
+        self.num_classes = len(self.class_to_idx)
+        self._configure_sampling(use_class_balances, use_minority_augmentation, minority_threshold)
 
         # Multi-class mapping
-        self.class_to_idx = self.class_to_idx
-
         # Get genus-to-species mapping
         self.taxon = self.taxonomic_mapping()
         
         #!NOTE: TESTING PURPOSES ONLY
         print(f"\n[TaxonomicOrchidDataset] Initialized with:")
         print(f"  - Mode: {mode}")
-        print(f"  - Classes' Structure: {'Hierarchical (all-species)' if hierarchical_class_mode else 'Flat (genera-only)'}")
+        print(f"  - Task: {task}{f' ({target_genus})' if target_genus else ''}")
         print(f"  - Number of classes: {len(self.classes)}")
         print(f"  - Total samples: {len(self.dataset)}")
         print(f"  - Weights: {'Class Balanced' if use_class_balances else 'Default'}")
         print(f"  - Minority Augmentation: {'Enabled' if use_minority_augmentation else 'Disabled'} (Threshold: {minority_threshold})")
         print(f"  - Classes: {self.classes}\n")
+
+    def _configure_sampling(self, use_class_balances, use_minority_augmentation, minority_threshold):
+        """Mirror the base dataset's balancing behavior for explicit task labels."""
+        from collections import Counter
+        from torchvision import transforms
+        import random
+
+        self._random = random
+        if use_minority_augmentation:
+            counts = Counter(self.targets)
+            self.minority_classes = {label for label, count in counts.items() if count < minority_threshold}
+            self.minority_transform = transforms.Compose([
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomRotation(30),
+                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+                transforms.RandomAffine(degrees=0, shear=10),
+            ])
+        self.class_weights = None
+        if use_class_balances:
+            counts = np.bincount(self.targets, minlength=self.num_classes)
+            counts = torch.tensor(counts, dtype=torch.float32)
+            max_count = counts.max().clamp(min=1.0)
+            beta = 1.0 - 1.0 / max_count
+            effective_num = 1.0 - torch.pow(beta, counts)
+            weights = (1.0 - beta) / (effective_num + 1e-8)
+            self.class_weights = weights / weights.sum() * self.num_classes
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img, label = self.dataset[idx]
+        if self.use_minority_augmentation and label in self.minority_classes and self._random.random() < self.aug_prob:
+            img = self.minority_transform(img)
+        if self.use_class_balance and self.class_weights is not None:
+            return img, label, self.class_weights[label]
+        return img, label
 
     def taxonomic_mapping(self):
         """
@@ -74,24 +129,10 @@ class TaxonomicOrchidDataset(HierarchicalDataset):
         Only first two levels are considered.
         Skip any folder named "UNLABELED".
         """
-        root_path = self.rootDir 
-        taxonMap = {}
-
-        for genus_dir in sorted(os.listdir(root_path)):
-            genus_path = os.path.join(root_path, genus_dir)
-            
-            if os.path.isdir(genus_path) and genus_dir.upper() != "UNLABELED":
-                species = []
-
-                for sp in sorted(os.listdir(genus_path)):
-                    sp_path = os.path.join(genus_path, sp)
-                    
-                    if os.path.isdir(sp_path) and sp.upper() != "UNLABELED":
-                        species.append(sp)
-                
-                if species:
-                    taxonMap[genus_dir] = species
-        return taxonMap
+        taxon_map = {}
+        for record in self.dataset.taxonomy.records:
+            taxon_map.setdefault(record.genus_id, []).append(record.species_name)
+        return taxon_map
     
     def getLabels(self):
         return self.taxon
