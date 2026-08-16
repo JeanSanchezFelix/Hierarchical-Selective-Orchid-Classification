@@ -46,3 +46,23 @@ not private image data.
 The phylogenetic source, label mapping, unmatched labels, and derived distance
 matrix will be added in Phase 6. Phylogenetic metrics will only be calculated for
 labels that map to a vetted source tree.
+
+## Reproducible experiment entry points
+
+The checked-in YAML files define the baseline and router protocols. Edit only the
+private `root_dir` and manifest location if your local paths differ; keep a copy of
+the final YAML beside the resulting artifact directory.
+
+```powershell
+conda run -n orchid_edge python scripts/train_orchid_baseline.py
+conda run -n orchid_edge python scripts/train_orchid_router.py
+conda run -n orchid_edge python scripts/train_orchid_experts.py --genus Dendrobium
+```
+
+`--genus all` deliberately starts every available expert and should be used only
+after the router and a representative expert have been checked. Each run writes
+label and configuration provenance under `artifacts/orchid/<experiment-id>/`.
+
+`scripts/run_orchid_evaluation.py` currently validates and records an evaluation
+request only. It cannot and does not report cascade results until Phase 7 implements
+the routing and metric evaluator.

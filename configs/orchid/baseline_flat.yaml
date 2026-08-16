@@ -1,0 +1,16 @@
+experiment_id: baseline_flat/mobilenet_v2
+dataset:
+  root_dir: data/taxonomic-orchid/TaxonomicOrchidDataset
+  split_manifest: artifacts/leakage_audit/orchid_split.csv
+  task: flat_species
+training:
+  model_name: mobilenet_v2
+  img_size: 224
+  batch_size: 32
+  epochs: 20
+  learning_rate: 0.001
+  optimizer: adam
+  criterion: cross_entropy
+  data_augmentation: true
+  sampler: false
+  class_weights: true

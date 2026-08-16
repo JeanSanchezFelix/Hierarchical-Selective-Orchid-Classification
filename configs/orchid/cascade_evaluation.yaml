@@ -1,0 +1,12 @@
+experiment_id: cascade_evaluation/top2
+dataset:
+  root_dir: data/taxonomic-orchid/TaxonomicOrchidDataset
+  split_manifest: artifacts/leakage_audit/orchid_split.csv
+  task: flat_species
+training:
+  # This section defines preprocessing compatibility; it does not train.
+  model_name: mobilenet_v2
+  img_size: 224
+  batch_size: 32
+  epochs: 1
+  learning_rate: 0.001
