@@ -38,19 +38,19 @@ GPU is optional; the workflow can run on CPU, but training will take longer.
 The expected hierarchy is exactly:
 
 ```text
-TaxonomicOrchidDataset/
-  Cattleya/
-    Cattleya_trianae/
+taxonomic-orchid/
+  Bletia/
+    Bti. patula/
       image_001.jpg
-  Dendrobium/
-    Dendrobium_nobile/
+  Cattleya/
+    C. trianae/
       image_002.jpg
 ```
 
 By default, the configs expect this directory:
 
 ```text
-data\taxonomic-orchid\TaxonomicOrchidDataset
+datasets\taxonomic-orchid
 ```
 
 If your dataset is elsewhere, edit `dataset.root_dir` in all three files before
@@ -65,7 +65,7 @@ configs\orchid\expert_template.yaml
 Use forward slashes in YAML paths, for example:
 
 ```yaml
-root_dir: C:/OrchidData/TaxonomicOrchidDataset
+root_dir: C:/OrchidData/taxonomic-orchid
 ```
 
 Do not put unlabeled non-orchid images inside a genus or species directory.
@@ -77,7 +77,7 @@ dataset; the taxonomy scanner ignores that directory.
 Set your dataset path once for the current PowerShell session:
 
 ```powershell
-$datasetRoot = "C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression\data\taxonomic-orchid\TaxonomicOrchidDataset"
+$datasetRoot = "C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression\datasets\taxonomic-orchid"
 ```
 
 Create the split manifest:

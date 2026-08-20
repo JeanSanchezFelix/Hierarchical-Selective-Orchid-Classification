@@ -1,6 +1,6 @@
 experiment_id: species_experts/mobilenet_v2
 dataset:
-  root_dir: data/taxonomic-orchid/TaxonomicOrchidDataset
+  root_dir: datasets/taxonomic-orchid
   split_manifest: artifacts/leakage_audit/orchid_split.csv
   task: genus_species
   # The command replaces this value: --genus Dendrobium

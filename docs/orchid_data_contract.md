@@ -148,7 +148,7 @@ by this pipeline. The downloaded source archive is intentionally under ignored
 
 ```powershell
 conda run -n orchid_edge python scripts/prepare_orchid_phylogeny.py `
-  --dataset-root data/taxonomic-orchid/TaxonomicOrchidDataset
+  --dataset-root datasets/taxonomic-orchid
 ```
 
 This writes a review-required mapping CSV. Fill `source_tip` only after checking
