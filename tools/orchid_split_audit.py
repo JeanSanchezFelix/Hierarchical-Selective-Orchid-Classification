@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import random
+import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -21,6 +22,11 @@ from pathlib import Path
 from typing import Iterable
 
 import numpy as np
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from PIL import Image
 from model_compression.src.orchid.images import load_orchid_rgb
 
