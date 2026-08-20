@@ -1,6 +1,6 @@
 experiment_id: baseline_flat/mobilenet_v2
 dataset:
-  root_dir: datasets/taxonomic-orchid
+  root_dir: /datasets/taxonomic-orchid
   split_manifest: artifacts/leakage_audit/orchid_split.csv
   task: flat_species
 training:

@@ -50,7 +50,7 @@ taxonomic-orchid/
 By default, the configs expect this directory:
 
 ```text
-datasets\taxonomic-orchid
+/datasets/taxonomic-orchid
 ```
 
 If your dataset is elsewhere, edit `dataset.root_dir` in all three files before
@@ -65,7 +65,7 @@ configs\orchid\expert_template.yaml
 Use forward slashes in YAML paths, for example:
 
 ```yaml
-root_dir: C:/OrchidData/taxonomic-orchid
+root_dir: /datasets/taxonomic-orchid
 ```
 
 Do not put unlabeled non-orchid images inside a genus or species directory.
@@ -77,7 +77,7 @@ dataset; the taxonomy scanner ignores that directory.
 Set your dataset path once for the current PowerShell session:
 
 ```powershell
-$datasetRoot = "C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression\datasets\taxonomic-orchid"
+$datasetRoot = "/datasets/taxonomic-orchid"
 ```
 
 Create the split manifest:
