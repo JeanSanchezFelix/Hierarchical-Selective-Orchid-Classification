@@ -21,7 +21,8 @@ from pathlib import Path
 from typing import Iterable
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image
+from model_compression.src.orchid.images import load_orchid_rgb
 
 
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
@@ -140,9 +141,8 @@ def sha256(path: Path) -> str:
 
 def dhash(path: Path) -> int:
     """Return a 64-bit difference hash. It is a candidate generator, not proof."""
-    with Image.open(path) as image:
-        image = ImageOps.exif_transpose(image).convert("L").resize((9, 8), Image.Resampling.LANCZOS)
-        pixels = np.asarray(image, dtype=np.int16)
+    image = load_orchid_rgb(path).convert("L").resize((9, 8), Image.Resampling.LANCZOS)
+    pixels = np.asarray(image, dtype=np.int16)
     differences = pixels[:, 1:] > pixels[:, :-1]
     value = 0
     for bit in differences.ravel():

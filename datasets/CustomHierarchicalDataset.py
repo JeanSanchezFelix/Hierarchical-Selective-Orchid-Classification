@@ -15,6 +15,7 @@ from model_compression.src.orchid.constants import (
     TASK_GENUS_SPECIES,
     TASK_TARGET_GENUS,
 )
+from model_compression.src.orchid.images import load_orchid_rgb
 from model_compression.src.orchid.taxonomy import OrchidTaxonomy, scan_orchid_taxonomy
 
 Image.MAX_IMAGE_PIXELS = None
@@ -32,7 +33,7 @@ class OrchidTaskImageFolder(ImageFolder):
         self.target_genus = target_genus
         self.taxonomy: OrchidTaxonomy = scan_orchid_taxonomy(root)
         self._validate_task()
-        super().__init__(root, transform=transform, **kwargs)
+        super().__init__(root, transform=transform, loader=load_orchid_rgb, **kwargs)
 
     def _validate_task(self):
         if self.task not in {TASK_GENUS, TASK_FLAT_SPECIES, TASK_GENUS_SPECIES, TASK_TARGET_GENUS}:
