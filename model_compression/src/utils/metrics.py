@@ -39,9 +39,12 @@ def calculate_metrics(
     Returns:
         A dict mapping metric names to their values.
     """
-    # Determine whether the task is binary or multiclass.
-    num_classes = len(np.unique(y_true))
-    average = 'binary' if num_classes == 2 else 'macro'
+    # The model can have output columns for classes that do not appear in a
+    # particular split.  Metrics must use the classes observed in ``y_true``,
+    # rather than infer the number of score columns from that split.
+    observed_classes = np.unique(y_true)
+    num_classes = len(observed_classes)
+    average = 'binary' if np.array_equal(observed_classes, np.array([0, 1])) else 'macro'
 
     metrics = {
         "Accuracy": accuracy_score(y_true, y_pred),
@@ -51,12 +54,32 @@ def calculate_metrics(
         "MCC": matthews_corrcoef(y_true, y_pred)
     }
     if y_proba is not None:
-        if num_classes == 2:
-            # For binary, assume probabilities for the positive class are in column index 1.
-            metrics["AUC-Score"] = roc_auc_score(y_true, y_proba[:, 0])
+        y_proba = np.asarray(y_proba)
+        if y_proba.ndim != 2:
+            raise ValueError("y_proba must have shape (n_samples, n_classes).")
+        if observed_classes.size and (observed_classes[0] < 0 or observed_classes[-1] >= y_proba.shape[1]):
+            raise ValueError("y_true contains a class without a corresponding y_proba column.")
+
+        if num_classes < 2:
+            # ROC AUC is undefined when a split contains only one class.
+            metrics["AUC-Score"] = float("nan")
+        elif num_classes == 2:
+            # sklearn treats the greater label as the positive class.  Select
+            # its actual model-output column; class IDs need not be consecutive.
+            metrics["AUC-Score"] = roc_auc_score(y_true, y_proba[:, observed_classes[1]])
         else:
-            # For multiclass, compute the AUC using one-vs-rest probabilities.
-            metrics["AUC-Score"] = roc_auc_score(y_true, y_proba, multi_class='ovr', average='macro')
+            # sklearn requires multiclass score rows to sum to one.  Remove
+            # output columns for classes absent from this split, then
+            # renormalize to evaluate only the observed one-vs-rest classes.
+            observed_proba = y_proba[:, observed_classes]
+            observed_proba = observed_proba / observed_proba.sum(axis=1, keepdims=True)
+            metrics["AUC-Score"] = roc_auc_score(
+                y_true,
+                observed_proba,
+                labels=observed_classes,
+                multi_class='ovr',
+                average='macro',
+            )
 
     return metrics
 
@@ -473,4 +496,3 @@ def plot_radar_chart(
         plt.savefig(save_path, bbox_inches='tight')
     else:
         plt.show()
-

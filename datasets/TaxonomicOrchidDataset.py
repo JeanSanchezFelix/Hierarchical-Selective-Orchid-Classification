@@ -2,6 +2,7 @@ import os
 import torch
 import numpy as np
 from tqdm import tqdm
+from pathlib import Path
 from torchvision import datasets, transforms
 from torch.utils.data import Dataset, Subset
 from sklearn.model_selection import train_test_split
@@ -26,7 +27,7 @@ class TaxonomicOrchidDataset(HierarchicalDataset):
     # rootDir = "G:/My Drive/ColabNotebooks/TaxonomicOrchidDataset" #For testing reasons
     # rootDir = "data/taxonomic-orchid/download/"
     # rootDir =  "/home/jean-sanchez/Documents/TaxonomicOrchidDataset/TaxonomicOrchidDataset"
-    rootDir =  "data/taxonomic-orchid/TaxonomicOrchidDataset"
+    rootDir =  str(Path("/datasets/taxomic-orchid"))
 
     def __init__(
         self, 

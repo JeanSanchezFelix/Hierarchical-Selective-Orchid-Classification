@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from threading import Lock
 
@@ -34,7 +33,6 @@ def load_orchid_rgb(path: str | Path) -> Image.Image:
                     decoded = _decode_rgb(image_path)
                 finally:
                     ImageFile.LOAD_TRUNCATED_IMAGES = previous_setting
-            logging.warning("Decoded PNG with Pillow compatibility retry: %s", image_path)
             return decoded
         except (OSError, ValueError, SyntaxError) as retry_error:
             raise OSError(f"Unable to decode PNG {image_path}: {original_error}; retry failed: {retry_error}") from retry_error
