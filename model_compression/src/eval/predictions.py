@@ -78,6 +78,7 @@ def _compute_loss_and_predictions(
     else:
         raise ValueError(f"Unsupported loss function: {criterion.__class__.__name__}")
 
+    preds = preds.reshape(-1)
     return loss, probs, preds
 
 def _compute_predictions(
@@ -98,8 +99,9 @@ def _compute_predictions(
     is_binary = (outputs.ndim == 1) or (outputs.shape[1] == 1)
 
     if is_binary:
-        probs = torch.sigmoid(outputs)
-        preds = (probs >= 0.5).float()
+        single_output = outputs.reshape(-1, 1)
+        probs = torch.sigmoid(single_output)
+        preds = (probs >= 0.5).to(dtype=torch.long).reshape(-1)
     else:
         probs = torch.softmax(outputs, dim=1)
         _, preds = torch.max(probs, dim=1)

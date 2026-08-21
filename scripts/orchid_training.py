@@ -22,6 +22,7 @@ from datasets.TaxonomicOrchidDataset import TaxonomicOrchidDataset
 from model_compression.src.orchid.artifacts import OrchidArtifactLayout
 from model_compression.src.orchid.constants import TASK_FLAT_SPECIES, TASK_GENUS, TASK_GENUS_SPECIES, TASK_TARGET_GENUS
 from model_compression.src.train import transfer_learning
+from model_compression.src.utils.callbacks import process_callbacks
 from model_compression.src.utils.preprocessing import load_data
 
 
@@ -105,6 +106,14 @@ def run_training(config: dict[str, Any], artifact_root: str | Path = "artifacts/
         split_manifest=str(manifest),
         dataset_kwargs=dataset_kwargs,
     )
+    callback_config = dict(training)
+    callback_config.update(
+        {
+            "save_dir": str(layout.checkpoints_dir),
+            "save_name": "callback",
+        }
+    )
+    callbacks = list(process_callbacks(callback_config).values())
     transfer_learning(
         model_name=training.get("model_name", "mobilenet_v2"),
         data_loaders=loaders,
@@ -113,7 +122,7 @@ def run_training(config: dict[str, Any], artifact_root: str | Path = "artifacts/
         num_epochs=int(training.get("epochs", 10)),
         criterion_name=training.get("criterion", "cross_entropy"),
         optimizer_name=training.get("optimizer", "adam"),
-        callbacks=None,
+        callbacks=callbacks,
         pretrained_weights_path=training.get("pretrained_weights"),
         use_class_weights=bool(training.get("class_weights", False)),
         orchid_checkpoint_path=str(layout.checkpoints_dir / "best_orchid_model.pt"),

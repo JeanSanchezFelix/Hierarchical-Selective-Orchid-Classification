@@ -33,6 +33,7 @@ from .metrics import (
     plot_train_val_curve,
     plot_roc_auc_curve,
     plot_calibration_curve,
+    export_readable_metrics_report,
     plot_log_loss  
 )
 

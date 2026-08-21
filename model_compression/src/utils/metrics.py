@@ -1,4 +1,6 @@
+import csv
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
@@ -19,6 +21,7 @@ from sklearn.calibration import calibration_curve
 from sklearn.preprocessing import label_binarize
 import matplotlib.pyplot as plt
 import seaborn as sns
+from pycm import ConfusionMatrix
 
 # Use a colorblind-friendly palette
 sns.set_palette("colorblind")
@@ -51,13 +54,16 @@ def calculate_metrics(
         "Recall": recall_score(y_true, y_pred, average=average, zero_division=0),
         "Precision": precision_score(y_true, y_pred, average=average, zero_division=0),
         "F1-Score": f1_score(y_true, y_pred, average=average, zero_division=0),
-        "MCC": matthews_corrcoef(y_true, y_pred)
+        "MCC": 0.0 if num_classes < 2 else matthews_corrcoef(y_true, y_pred)
     }
     if y_proba is not None:
         y_proba = np.asarray(y_proba)
         if y_proba.ndim != 2:
             raise ValueError("y_proba must have shape (n_samples, n_classes).")
-        if observed_classes.size and (observed_classes[0] < 0 or observed_classes[-1] >= y_proba.shape[1]):
+        missing_probability_column = observed_classes.size and (
+            observed_classes[0] < 0 or observed_classes[-1] >= y_proba.shape[1]
+        )
+        if missing_probability_column and not (num_classes == 2 and y_proba.shape[1] == 1):
             raise ValueError("y_true contains a class without a corresponding y_proba column.")
 
         if num_classes < 2:
@@ -66,7 +72,8 @@ def calculate_metrics(
         elif num_classes == 2:
             # sklearn treats the greater label as the positive class.  Select
             # its actual model-output column; class IDs need not be consecutive.
-            metrics["AUC-Score"] = roc_auc_score(y_true, y_proba[:, observed_classes[1]])
+            positive_proba = y_proba[:, 0] if y_proba.shape[1] == 1 else y_proba[:, observed_classes[1]]
+            metrics["AUC-Score"] = roc_auc_score(y_true, positive_proba)
         else:
             # sklearn requires multiclass score rows to sum to one.  Remove
             # output columns for classes absent from this split, then
@@ -142,72 +149,131 @@ def plot_confusion_matrix(
     y_pred: Union[List[int], np.ndarray],
     labels: Optional[List[str]] = None,
     title: str = 'Confusion Matrix',
-    save_path: Optional[str] = None
+    save_path: Optional[str] = None,
 ) -> None:
-    """
-    Plot a normalized confusion matrix heatmap.
+    """Plot a normalized confusion matrix through PyCM.
 
-    Args:
-        y_true: True class labels.
-        y_pred: Predicted class labels.
-        labels: Optional list of label names in order.
-        title: Plot title.
-        save_path: Path to save the figure.
+    PyCM receives display labels directly, preserving class names in the plot
+    rather than relying on a separate tick-label mapping.
     """
-    # Compute confusion matrix with true normalization
-    cm = confusion_matrix(y_true, y_pred, normalize="true")
-    
-    # If labels not provided, extract unique labels
+    true = np.asarray(y_true).reshape(-1)
+    predicted = np.asarray(y_pred).reshape(-1)
+    class_ids = np.unique(np.concatenate((true, predicted))).astype(int)
     if labels is None:
-        labels = [str(l) for l in np.unique(np.concatenate([y_true, y_pred]))]
-    
-    # Create figure with increased width to accommodate labels
-    plt.figure(figsize=(10, 8))
-    
-    # Create heatmap with improved readability
-    sns.heatmap(
-        cm, 
-        annot=True,  # Show numerical values
-        fmt=".2f",   # Two decimal places
-        cmap="Blues",  # Color scheme
-        cbar_kws={'label': 'Normalized Frequency'},  # Colorbar label
-        xticklabels=labels,
-        yticklabels=labels,
-        annot_kws={"fontsize": 12}  # Smaller font for annotations
+        display_labels = [str(class_id) for class_id in class_ids]
+    elif len(labels) == len(class_ids):
+        display_labels = [str(label) for label in labels]
+    elif class_ids.size and class_ids.min() >= 0 and class_ids.max() < len(labels):
+        display_labels = [str(labels[class_id]) for class_id in class_ids]
+    else:
+        raise ValueError("labels must match the observed classes or be indexed by class ID.")
+    label_map = dict(zip(class_ids, display_labels))
+    actual_labels = [label_map[int(value)] for value in true]
+    predicted_labels = [label_map[int(value)] for value in predicted]
+
+    detailed_view = len(class_ids) <= 30
+    cm = ConfusionMatrix(actual_vector=actual_labels, predict_vector=predicted_labels)
+    axes = cm.plot(
+        normalized=True,
+        title=title,
+        number_label=detailed_view,
+        cmap=plt.cm.Blues,
+        plot_lib="matplotlib",
     )
-    
-    # Adjust tick positions to center labels in squares
-    plt.xticks(
-        np.arange(len(labels)) + 0.5,  # Center labels in squares
-        labels, 
-        rotation=45,  # 45-degree angle
-        ha='right',   # Horizontal alignment
-        rotation_mode='anchor'  # Ensures rotation is applied from the right
-    )
-    
-    plt.yticks(
-        np.arange(len(labels)) + 0.5,  # Center labels in squares
-        labels, 
-        rotation=45,  # 45-degree angle
-        ha='right',   # Horizontal alignment
-        rotation_mode='anchor'  # Ensures rotation is applied from the right
-    )
-    
-    # Set title and axis labels
-    plt.title(title, fontsize=16, pad=20)
-    plt.xlabel("Predicted Labels", fontsize=12, labelpad=10)
-    plt.ylabel("True Labels", fontsize=12, labelpad=10)
-    
-    # Ensure layout is tight to prevent label cutoff
-    plt.tight_layout()
-    
-    # Save or display the plot
+    figure = axes.figure
+    figure.set_size_inches((10, 8) if detailed_view else (18, 16))
+    if not detailed_view:
+        axes.set_xticks([])
+        axes.set_yticks([])
+        axes.set_title(f"{title} ({len(class_ids)} classes; labels in confusion_matrix.csv)")
+    figure.tight_layout()
     if save_path:
-        plt.savefig(save_path, bbox_inches='tight', dpi=300)
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        figure.savefig(save_path, bbox_inches='tight', dpi=300)
+        plt.close(figure)
     else:
         plt.show()
 
 
+def export_readable_metrics_report(
+    metrics: Dict[str, float], y_true, y_pred, y_proba: Optional[np.ndarray],
+    save_dir: str, class_names: Optional[List[str]] = None,
+    image_paths: Optional[List[str]] = None,
+) -> Path:
+    """Export Markdown and CSV alternatives for unreadable large-class plots."""
+    output = Path(save_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    true, predicted = np.asarray(y_true).reshape(-1), np.asarray(y_pred).reshape(-1)
+    if image_paths is not None and len(image_paths) != len(true):
+        raise ValueError("image_paths must have one entry per prediction.")
+    class_ids = np.unique(np.concatenate((true, predicted))).astype(int)
+    counts = (np.array([[len(true)]], dtype=int) if len(class_ids) == 1
+              else confusion_matrix(true, predicted, labels=class_ids))
+    totals = counts.sum(axis=1)
+
+    def label_for(class_id: int) -> str:
+        if class_names is not None and 0 <= class_id < len(class_names):
+            return str(class_names[class_id])
+        return str(class_id)
+
+    with (output / "confusion_matrix.csv").open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=[
+            "true_class_id", "true_class", "predicted_class_id", "predicted_class", "count", "true_class_rate", "true_image_paths",
+        ])
+        writer.writeheader()
+        for row, actual in enumerate(class_ids):
+            for column, predicted_id in enumerate(class_ids):
+                count = int(counts[row, column])
+                if count:
+                    mask = (true == actual) & (predicted == predicted_id)
+                    matched_paths = [] if image_paths is None else [str(image_paths[index]) for index in np.flatnonzero(mask)]
+                    writer.writerow({
+                        "true_class_id": int(actual), "true_class": label_for(int(actual)),
+                        "predicted_class_id": int(predicted_id), "predicted_class": label_for(int(predicted_id)),
+                        "count": count, "true_class_rate": f"{count / totals[row]:.6f}",
+                        "true_image_paths": "\n".join(matched_paths),
+                    })
+    if image_paths is not None:
+        with (output / "predictions.csv").open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=["image_path", "true_class_id", "true_class", "predicted_class_id", "predicted_class"])
+            writer.writeheader()
+            for path_value, actual, predicted_id in zip(image_paths, true, predicted):
+                writer.writerow({"image_path": path_value, "true_class_id": int(actual), "true_class": label_for(int(actual)),
+                                 "predicted_class_id": int(predicted_id), "predicted_class": label_for(int(predicted_id))})
+    errors = sorted(((int(counts[row, column]), label_for(int(actual)), label_for(int(predicted_id)), int(counts[row, column]) / totals[row])
+                    for row, actual in enumerate(class_ids) for column, predicted_id in enumerate(class_ids)
+                    if counts[row, column] and actual != predicted_id), reverse=True)
+    lines = ["# Evaluation metrics", "", "## Summary", "", "| Metric | Value |", "| --- | ---: |"]
+    for name, value in metrics.items():
+        lines.append(f"| {name} | {value:.6f} |" if isinstance(value, (float, np.floating)) else f"| {name} | {value} |")
+    lines.extend(["", "## Confusion matrix", "", f"The full sparse matrix is in [`confusion_matrix.csv`](confusion_matrix.csv). It contains {len(class_ids)} observed classes and {len(errors)} error pairs.", ""])
+    if errors:
+        lines.extend(["### Most frequent confusions", "", "| True class | Predicted class | Count | Rate within true class |", "| --- | --- | ---: | ---: |"])
+        for count, actual, predicted_label, rate in errors[:25]:
+            lines.append("| {} | {} | {} | {:.2%} |".format(
+                actual.replace("|", "\\|"), predicted_label.replace("|", "\\|"), count, rate,
+            ))
+    if y_proba is not None:
+        proba = np.asarray(y_proba, dtype=float)
+        confidence = np.maximum(proba[:, 0], 1 - proba[:, 0]) if proba.shape[1] == 1 else proba.max(axis=1)
+        correct, edges, rows = true == predicted, np.linspace(0, 1, 11), []
+        for index in range(10):
+            low, high = edges[index], edges[index + 1]
+            mask = (confidence >= low) & ((confidence <= high) if index == 9 else (confidence < high))
+            count = int(mask.sum())
+            mean = float(confidence[mask].mean()) if count else float("nan")
+            accuracy = float(correct[mask].mean()) if count else float("nan")
+            rows.append({"bin_start": low, "bin_end": high, "count": count, "mean_confidence": mean, "accuracy": accuracy})
+        with (output / "calibration.csv").open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=["bin_start", "bin_end", "count", "mean_confidence", "accuracy"])
+            writer.writeheader()
+            writer.writerows(rows)
+        lines.extend(["", "## Calibration", "", "The readable top-label calibration bins are in [`calibration.csv`](calibration.csv).", "", "| Confidence bin | Samples | Mean confidence | Accuracy |", "| --- | ---: | ---: | ---: |"])
+        for row in rows:
+            lines.append(f"| {row['bin_start']:.1f}–{row['bin_end']:.1f} | {row['count']} | {row['mean_confidence']:.4f} | {row['accuracy']:.4f} |")
+    report = output / "README.md"
+    report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return report
 def plot_train_val_curve(
     history: Dict[str, List[float]],
     metric_name: str = 'loss',
@@ -279,19 +345,18 @@ def plot_roc_auc_curve(
 
     # Binary classification
     if num_classes == 2:
-        # Check proba shape
-        if y_proba.shape[1] != 1:
-            raise ValueError(f"Expected y_proba with shape (*, 1) for binary, got {y_proba.shape}")
-        
-        for i in range(num_classes - 1):
-            fpr, tpr, _ = roc_curve(y_true, y_proba[:, i])
-            roc_auc = auc(fpr, tpr)
-            plt.plot(
-                fpr, tpr,
-                color=colors[i],
-                lw=2,
-                label=f"{class_names[i]} (AUC = {roc_auc:.2f})"
-            )
+        if y_proba.shape[1] not in (1, 2):
+            raise ValueError(f"Expected y_proba with shape (*, 1) or (*, 2) for binary, got {y_proba.shape}")
+        # One-logit BCE heads provide P(class 1); softmax heads provide both classes.
+        positive_proba = y_proba[:, 0] if y_proba.shape[1] == 1 else y_proba[:, 1]
+        fpr, tpr, _ = roc_curve(y_true, positive_proba, pos_label=classes[1])
+        roc_auc = auc(fpr, tpr)
+        plt.plot(
+            fpr, tpr,
+            color=colors[1],
+            lw=2,
+            label=f"{class_names[1]} (AUC = {roc_auc:.2f})"
+        )
     else:
         # Multiclass: binarize and plot per class
         y_true_bin = label_binarize(y_true, classes=classes)
@@ -364,22 +429,26 @@ def plot_calibration_curve(
 
     plt.figure(figsize=(10, 8))
 
-    # Binary calibration
-    if y_proba.shape[1] == 1 and num_classes == 2:        
-        y_true_bin = label_binarize(y_true, classes=classes)
-
-        for i in range(num_classes - 1):
-            prob_true, prob_pred = calibration_curve(
-                y_true_bin[:, i], y_proba[:, i], n_bins=n_bins
+    # Binary calibration. label_binarize returns one target column for a
+    # binary task, even when a softmax model returns two probability columns.
+    if num_classes == 2:
+        if y_proba.shape[1] not in (1, 2):
+            raise ValueError(
+                f"Expected y_proba with shape (*, 1) or (*, 2) for binary, got {y_proba.shape}"
             )
-            plt.plot(
-                prob_pred, prob_true,
-                marker=markers[i % len(markers)],
-                linestyle='-',
-                lw=2,
-                label=class_names[i],
-                color=colors[i]
-            )
+        positive_targets = (np.asarray(y_true) == classes[1]).astype(int)
+        positive_proba = y_proba[:, 0] if y_proba.shape[1] == 1 else y_proba[:, 1]
+        prob_true, prob_pred = calibration_curve(
+            positive_targets, positive_proba, n_bins=n_bins
+        )
+        plt.plot(
+            prob_pred, prob_true,
+            marker=markers[1 % len(markers)],
+            linestyle="-",
+            lw=2,
+            label=class_names[1],
+            color=colors[1]
+        )
     else:
         # Multiclass one-vs-rest calibration
         y_true_bin = label_binarize(y_true, classes=classes)

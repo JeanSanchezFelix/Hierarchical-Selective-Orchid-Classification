@@ -3,6 +3,13 @@
 from __future__ import annotations
 import argparse
 from pathlib import Path
+import sys
+
+# Directly running a script puts only scripts/ on sys.path. Add the repository
+# root so local packages such as datasets are importable.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from datasets.TaxonomicOrchidDataset import TaxonomicOrchidDataset
 from orchid_training import load_orchid_config, run_training, with_target_genus

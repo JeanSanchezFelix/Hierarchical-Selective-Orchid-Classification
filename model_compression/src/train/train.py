@@ -162,7 +162,7 @@ def transfer_learning(
             test_inference(model, data_loaders['test'], device, save_dir=metrics_dir)
         except Exception as test_error:
             logging.warning(f"Test inference failed: {test_error}")
-            raise RuntimeError("Failed to test inference") from e
+            raise RuntimeError("Failed to test inference") from test_error
 
     return model
 

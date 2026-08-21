@@ -78,6 +78,81 @@ def allocate_splits(count: int, ratios: tuple[float, float, float]) -> list[str]
     return [split for split, number in zip(SPLITS, allocation) for _ in range(number)]
 
 
+def near_duplicate_groups(
+    samples: list[tuple[Path, str, str]],
+    args: argparse.Namespace,
+    species_id: str,
+    progress: dict[str, int],
+) -> list[list[tuple[Path, str, str]]]:
+    """Return dHash-connected components for one species with live progress."""
+    if not samples:
+        return []
+    hashes = [0] * len(samples)
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {
+            executor.submit(dhash, path): index
+            for index, (path, _, _) in enumerate(samples)
+        }
+        for future in as_completed(futures):
+            hashes[futures[future]] = future.result()
+            progress["done"] += 1
+            if progress["done"] == 1 or progress["done"] % args.progress_every == 0:
+                print(
+                    f"Hashed {progress['done']}/{progress['total']} images "
+                    f"(currently {species_id})...",
+                    flush=True,
+                )
+    print(f"Grouping {len(samples)} hashes for {species_id}...", flush=True)
+    parent = list(range(len(samples)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left, right = find(left), find(right)
+        if left != right:
+            parent[right] = left
+
+    buckets: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for index, value in enumerate(hashes):
+        for band in range(8):
+            buckets[(band, (value >> (band * 8)) & 0xFF)].append(index)
+    for bucket in buckets.values():
+        if len(bucket) > args.max_bucket_size:
+            raise ValueError(
+                f"dHash bucket of {len(bucket)} images exceeds --max-bucket-size; "
+                "increase the limit to create a hash-grouped split without skipped comparisons."
+            )
+        for position, left in enumerate(bucket):
+            for right in bucket[position + 1:]:
+                if hamming(hashes[left], hashes[right]) <= args.dhash_threshold:
+                    union(left, right)
+    groups: dict[int, list[tuple[Path, str, str]]] = defaultdict(list)
+    for index, sample in enumerate(samples):
+        groups[find(index)].append(sample)
+    return list(groups.values())
+
+
+def allocate_group_splits(groups: list[list[tuple[Path, str, str]]], ratios: tuple[float, float, float], rng: random.Random) -> list[str]:
+    """Assign whole duplicate groups while keeping each species near its ratios."""
+    targets = [sum(map(len, groups)) * ratio for ratio in ratios]
+    assigned = [0, 0, 0]
+    ordered = sorted(groups, key=lambda group: (-len(group), rng.random()))
+    result: dict[int, str] = {}
+    for group in ordered:
+        size = len(group)
+        split_index = min(range(3), key=lambda index: sum(
+            ((assigned[current] + (size if current == index else 0)) - targets[current]) ** 2
+            for current in range(3)
+        ))
+        assigned[split_index] += size
+        result[id(group)] = SPLITS[split_index]
+    return [result[id(group)] for group in groups]
+
+
 def create_manifest(args: argparse.Namespace) -> None:
     dataset_root = Path(args.dataset_root).resolve()
     output = Path(args.output).resolve()
@@ -96,24 +171,35 @@ def create_manifest(args: argparse.Namespace) -> None:
     rows: list[dict[str, str]] = []
     split_counts: dict[str, int] = defaultdict(int)
     tiny_classes: list[str] = []
+    grouped_species = 0
+    progress = {"done": 0, "total": sum(map(len, per_species.values()))}
+    if args.group_near_duplicates:
+        print(f"Hash-grouping {progress['total']} images across {len(per_species)} species...", flush=True)
     for species_id in sorted(per_species):
         samples = per_species[species_id]
-        rng.shuffle(samples)
-        assignments = allocate_splits(len(samples), tuple(args.ratios))
+        if args.group_near_duplicates:
+            groups = near_duplicate_groups(samples, args, species_id, progress)
+            assignments = allocate_group_splits(groups, tuple(args.ratios), rng)
+            grouped_species += 1
+        else:
+            rng.shuffle(samples)
+            groups = [[sample] for sample in samples]
+            assignments = allocate_splits(len(samples), tuple(args.ratios))
         if len(samples) < 3:
             tiny_classes.append(species_id)
-        for (path, genus, species), split in zip(samples, assignments):
-            split_counts[split] += 1
-            rows.append(
-                {
-                    "image_path": path.relative_to(dataset_root).as_posix(),
-                    "genus_id": genus,
-                    "species_name": species,
-                    "species_id": species_id,
-                    "split": split,
-                    "split_note": "tiny_class_not_all_splits" if len(samples) < 3 else "",
-                }
-            )
+        for group, split in zip(groups, assignments):
+            for path, genus, species in group:
+                split_counts[split] += 1
+                rows.append(
+                    {
+                        "image_path": path.relative_to(dataset_root).as_posix(),
+                        "genus_id": genus,
+                        "species_name": species,
+                        "species_id": species_id,
+                        "split": split,
+                        "split_note": ("hash_group_disjoint" if args.group_near_duplicates else "") or ("tiny_class_not_all_splits" if len(samples) < 3 else ""),
+                    }
+                )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", newline="", encoding="utf-8") as stream:
@@ -130,7 +216,11 @@ def create_manifest(args: argparse.Namespace) -> None:
         "species": len(per_species),
         "split_counts": dict(split_counts),
         "species_with_fewer_than_three_images": tiny_classes,
-        "warning": "This is image-stratified, not specimen-disjoint. Run the audit and review candidates.",
+        "hash_group_disjoint": bool(args.group_near_duplicates),
+        "dhash_threshold": args.dhash_threshold if args.group_near_duplicates else None,
+        "warning": ("dHash-group-disjoint within species; this is still not proven specimen-disjoint."
+                    if args.group_near_duplicates else
+                    "This is image-stratified, not specimen-disjoint. Run the audit and review candidates."),
     }
     report_path = output.with_suffix(".summary.json")
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -288,11 +378,16 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     commands = result.add_subparsers(dest="command", required=True)
 
-    create = commands.add_parser("create-manifest", help="Create a deterministic image-stratified split manifest.")
+    create = commands.add_parser("create-manifest", help="Create a deterministic orchid split manifest.")
     create.add_argument("--dataset-root", required=True, help="Directory organized as Genus/Species/image.")
     create.add_argument("--output", required=True, help="CSV manifest path.")
     create.add_argument("--ratios", type=float, nargs=3, default=(0.8, 0.1, 0.1), metavar=("TRAIN", "VAL", "TEST"))
     create.add_argument("--seed", type=int, default=20260815)
+    create.add_argument("--group-near-duplicates", action="store_true", help="Assign each within-species dHash near-duplicate group to one split.")
+    create.add_argument("--dhash-threshold", type=int, default=6, choices=range(0, 65))
+    create.add_argument("--max-bucket-size", type=int, default=200, help="Fail rather than skip an oversized dHash comparison bucket.")
+    create.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 1), help="Image-decoding worker threads for hash grouping.")
+    create.add_argument("--progress-every", type=int, default=500, help="Print hash progress after this many images.")
     create.add_argument("--overwrite", action="store_true")
     create.set_defaults(handler=create_manifest)
 

@@ -14,19 +14,21 @@ def setup_model(
     pretrained_weights_path: Optional[str], 
     num_classes: int,
     use_imagenet_weights: bool = True,
+    binary_single_logit: bool = False,
 ) -> nn.Module:
     """
     Set up a pre-trained model with a custom classification head and optionally load custom weights.
     
     Depending on the provided `model_name`, this function selects and customizes a model architecture.
-    For binary classification (i.e. num_classes == 2), the classification layer is modified to output
+    When binary_single_logit is true for a two-class BCE task, the classification layer outputs
     a single logit; otherwise, it outputs logits for the specified number of classes.
     If a valid path is given in `pretrained_weights`, these weights are loaded into the model.
     
     Args:
         model_name: Identifier of the torchvision model (e.g., 'resnet18', 'mobilenet_v2').
         pretrained_weights_path: Optional path to custom weights file. If provided, load these weights.
-        num_classes: Number of output classes. For binary classification (2), outputs a single logit.
+        num_classes: Number of output classes.
+        binary_single_logit: Use one output logit only for a two-class BCE task.
         
     Returns:
         A torchvision model with its classifier head adapted to `num_classes`.
@@ -46,59 +48,59 @@ def setup_model(
     if model_name_lower == "mobilenet_v2":
         model = models.mobilenet_v2(weights=weights_arg)
         input_features = model.classifier[1].in_features
-        output_features = 1 if num_classes == 2 else num_classes
+        output_features = 1 if binary_single_logit and num_classes == 2 else num_classes
         model.classifier[1] = nn.Linear(input_features, output_features)
     elif model_name_lower == "resnet18":
         model = models.resnet18(weights=weights_arg)
         input_features = model.fc.in_features
-        output_features = 1 if num_classes == 2 else num_classes
+        output_features = 1 if binary_single_logit and num_classes == 2 else num_classes
         model.fc = nn.Linear(input_features, output_features)
     elif model_name_lower in ["resnet34", "resnet50", "resnet101", "resnet152"]:
         model = getattr(models, model_name_lower)(weights=weights_arg)
         input_features = model.fc.in_features
-        output_features = 1 if num_classes == 2 else num_classes
+        output_features = 1 if binary_single_logit and num_classes == 2 else num_classes
         model.fc = nn.Linear(input_features, output_features)
     elif model_name_lower in ["mobilenet_v3_large", "mobilenet_v3_small"]:
         model = getattr(models, model_name_lower)(weights=weights_arg)
         input_features = model.classifier[0].in_features
-        output_features = 1 if num_classes == 2 else num_classes
+        output_features = 1 if binary_single_logit and num_classes == 2 else num_classes
         model.classifier[0] = nn.Linear(input_features, output_features)
     elif model_name_lower in ["efficientnet_b0", "efficientnet_b1", "efficientnet_b2", "efficientnet_b3",
                               "efficientnet_b4", "efficientnet_b5", "efficientnet_b6", "efficientnet_b7"]:
         model = getattr(models, model_name_lower)(weights=weights_arg)
         input_features = model.classifier[1].in_features
-        output_features = 1 if num_classes == 2 else num_classes
+        output_features = 1 if binary_single_logit and num_classes == 2 else num_classes
         model.classifier[1] = nn.Linear(input_features, output_features)
     elif model_name_lower in ["vgg11", "vgg13", "vgg16", "vgg19", "vgg11_bn", "vgg13_bn", "vgg16_bn", "vgg19_bn"]:
         model = getattr(models, model_name_lower)(weights=weights_arg)
         input_features = model.classifier[0].in_features
-        output_features = 1 if num_classes == 2 else num_classes
+        output_features = 1 if binary_single_logit and num_classes == 2 else num_classes
         model.classifier[0] = nn.Linear(input_features, output_features)
     elif model_name_lower in ["densenet121", "densenet161", "densenet169", "densenet201"]:
         model = getattr(models, model_name_lower)(weights=weights_arg)
         input_features = model.classifier.in_features
-        output_features = 1 if num_classes == 2 else num_classes
+        output_features = 1 if binary_single_logit and num_classes == 2 else num_classes
         model.classifier = nn.Linear(input_features, output_features)
     elif model_name_lower in ["squeezenet1_0", "squeezenet1_1"]:
         model = getattr(models, model_name_lower)(weights=weights_arg)
         # For SqueezeNet, the classifier is a Sequential containing a Conv2d layer.
         in_channels = model.classifier[1].in_channels
         # When num_classes == 2, output a single channel; otherwise, use num_classes channels.
-        model.classifier[1] = nn.Conv2d(in_channels, 1 if num_classes == 2 else num_classes, kernel_size=(1, 1))
+        model.classifier[1] = nn.Conv2d(in_channels, 1 if binary_single_logit and num_classes == 2 else num_classes, kernel_size=(1, 1))
     elif model_name_lower in ["shufflenet_v2_x0_5", "shufflenet_v2_x1_0", "shufflenet_v2_x1_5", "shufflenet_v2_x2_0"]:
         model = getattr(models, model_name_lower)(weights=weights_arg)
         input_features = model.fc.in_features
-        output_features = 1 if num_classes == 2 else num_classes
+        output_features = 1 if binary_single_logit and num_classes == 2 else num_classes
         model.fc = nn.Linear(input_features, output_features)
     elif model_name_lower == "inception_v3":
         model = models.inception_v3(weights=weights_arg)
         input_features = model.fc.in_features
-        output_features = 1 if num_classes == 2 else num_classes
+        output_features = 1 if binary_single_logit and num_classes == 2 else num_classes
         model.fc = nn.Linear(input_features, output_features)
     elif model_name_lower == "alexnet":
         model = models.alexnet(weights=weights_arg)
         input_features = model.classifier[1].in_features
-        output_features = 1 if num_classes == 2 else num_classes
+        output_features = 1 if binary_single_logit and num_classes == 2 else num_classes
         model.classifier[1] = nn.Linear(input_features, output_features)
     else:
         logging.error(f"Unsupported model: {model_name}")
@@ -219,7 +221,10 @@ def tf_setup(
     """
     # Configure model, criterion, and optimizer
     num_classes = len(data_loader.dataset.classes)
-    model = setup_model(model_name, pretrained_weights_path, num_classes)
+    model = setup_model(
+        model_name, pretrained_weights_path, num_classes,
+        binary_single_logit=criterion_name.lower() in {"bce", "bce_with_logits"},
+    )
     criterion= setup_criterion(criterion_name, data_loader, use_class_weights)
     optimizer = setup_optimizer(model, optimizer_name, learning_rate)
     return model, criterion, optimizer

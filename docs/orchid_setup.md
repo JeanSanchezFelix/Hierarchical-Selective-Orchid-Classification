@@ -1,13 +1,13 @@
 # Orchid classifier: beginner run guide
 
 This guide runs the complete research workflow from a private image folder to
-LiteRT model-pack artifacts. Run commands from PowerShell. The dataset remains
-private; only derived artifacts are written under `artifacts/orchid/`.
+LiteRT model-pack artifacts. Run commands from a Bash shell (for example, a Linux
+terminal). The dataset remains private; only derived artifacts are written under `artifacts/orchid/`.
 
 ## 1. Open the repository
 
-```powershell
-Set-Location "C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression"
+```bash
+cd "/path/to/model-compression"
 ```
 
 ## 2. Create or use the Python environment
@@ -15,7 +15,7 @@ Set-Location "C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression"
 The pinned dependencies target Python 3.12. If `orchid_edge` already exists,
 skip the creation command.
 
-```powershell
+```bash
 conda create -n orchid_edge python=3.12 -y
 conda activate orchid_edge
 python -m pip install --upgrade pip
@@ -26,8 +26,8 @@ python --version
 If `conda activate` is unavailable in the terminal, prefix every Python command
 in this guide with `conda run -n orchid_edge`, for example:
 
-```powershell
-conda run -n orchid_edge python scripts\train_orchid_router.py
+```bash
+conda run -n orchid_edge python scripts/train_orchid_router.py
 ```
 
 The dependency file requests CUDA 12.4 PyTorch wheels. A CUDA-capable NVIDIA
@@ -57,9 +57,9 @@ If your dataset is elsewhere, edit `dataset.root_dir` in all three files before
 continuing:
 
 ```text
-configs\orchid\baseline_flat.yaml
-configs\orchid\genus_router.yaml
-configs\orchid\expert_template.yaml
+configs/orchid/baseline_flat.yaml
+configs/orchid/genus_router.yaml
+configs/orchid/expert_template.yaml
 ```
 
 Use forward slashes in YAML paths, for example:
@@ -74,37 +74,41 @@ dataset; the taxonomy scanner ignores that directory.
 
 ## 4. Create and audit the frozen train/validation/test split
 
-Set your dataset path once for the current PowerShell session:
+Set your dataset path once for the current Bash session:
 
-```powershell
-$datasetRoot = "/datasets/taxonomic-orchid"
+```bash
+dataset_root="/datasets/taxonomic-orchid"
 ```
 
-Create the split manifest:
+Create a new dHash-group-disjoint manifest. Near-duplicate images within the
+same species are assigned to one split together; this is still not proof of a
+specimen-disjoint split.
 
-```powershell
-python tools\orchid_split_audit.py create-manifest `
-  --dataset-root $datasetRoot `
-  --output artifacts\leakage_audit\orchid_split.csv
+```bash
+python tools/orchid_split_audit.py create-manifest \
+  --dataset-root "$dataset_root" \
+  --output artifacts/leakage_audit/orchid_split_hash_grouped.csv \
+  --group-near-duplicates
 ```
 
-Audit exact and visually similar cross-split images:
+Audit the new manifest. A successful dHash-grouped split should report zero
+cross-split candidates at the same threshold.
 
-```powershell
-python tools\orchid_split_audit.py audit `
-  --dataset-root $datasetRoot `
-  --manifest artifacts\leakage_audit\orchid_split.csv `
-  --output artifacts\leakage_audit\duplicate_candidates.csv
+```bash
+python tools/orchid_split_audit.py audit \
+  --dataset-root "$dataset_root" \
+  --manifest artifacts/leakage_audit/orchid_split_hash_grouped.csv \
+  --output artifacts/leakage_audit/duplicate_candidates_hash_grouped.csv
 ```
 
-Open and review `artifacts\leakage_audit\duplicate_candidates.csv`. Repeated
-captures of the same plant can leak into different splits. Correct the CSV by
-hand if necessary, then keep it frozen. Do **not** rerun `create-manifest` over
-an existing reviewed CSV unless you intentionally begin a new experiment.
+Inspect the audit output, then update `dataset.split_manifest` in all orchid
+YAML configs to `artifacts/leakage_audit/orchid_split_hash_grouped.csv` before
+training. This begins a new experiment: existing model metrics were produced
+with the older image-stratified manifest and are not comparable.
 
 ## 5. Run a quick environment check
 
-```powershell
+```bash
 python -m unittest discover -s tests -v
 ```
 
@@ -119,28 +123,28 @@ starting the next one.
 
 This is the single 199-species MobileNetV2 comparison.
 
-```powershell
-python scripts\train_orchid_baseline.py
+```bash
+python scripts/train_orchid_baseline.py
 ```
 
 Expected checkpoint:
 
 ```text
-artifacts\orchid\baseline_flat\mobilenet_v2\checkpoints\best_orchid_model.pt
+artifacts/orchid/baseline_flat/mobilenet_v2/checkpoints/best_orchid_model.pt
 ```
 
 ### B1 — genus router
 
 This model predicts the genus before expert routing.
 
-```powershell
-python scripts\train_orchid_router.py
+```bash
+python scripts/train_orchid_router.py
 ```
 
 Expected checkpoint:
 
 ```text
-artifacts\orchid\genus_router\mobilenet_v2\checkpoints\best_orchid_model.pt
+artifacts/orchid/genus_router/mobilenet_v2/checkpoints/best_orchid_model.pt
 ```
 
 ### H1/H2 — genus species experts
@@ -148,15 +152,15 @@ artifacts\orchid\genus_router\mobilenet_v2\checkpoints\best_orchid_model.pt
 Train one expert first. Replace `Phalaenopsis` with a represented genus if you
 prefer a different initial smoke test.
 
-```powershell
-python scripts\train_orchid_experts.py --genus Phalaenopsis
+```bash
+python scripts/train_orchid_experts.py --genus Phalaenopsis
 ```
 
 Check its `taxonomy.json`, `run_metadata.json`, and
-`checkpoints\best_orchid_model.pt`. Then train every genus:
+`checkpoints/best_orchid_model.pt`. Then train every genus:
 
-```powershell
-python scripts\train_orchid_experts.py --genus all
+```bash
+python scripts/train_orchid_experts.py --genus all
 ```
 
 A genus with exactly one species is deterministic after genus routing. It should
@@ -169,22 +173,22 @@ Run evaluation only after choosing the final router and all required specialists
 using validation data. Do not select thresholds or architectures from test
 results.
 
-```powershell
-python scripts\run_orchid_evaluation.py `
-  --router-checkpoint artifacts\orchid\genus_router\mobilenet_v2\checkpoints\best_orchid_model.pt `
-  --expert-checkpoint "Phalaenopsis=artifacts\orchid\species_experts\mobilenet_v2\Phalaenopsis\checkpoints\best_orchid_model.pt" `
-  --expert-checkpoint "Dendrobium=artifacts\orchid\species_experts\mobilenet_v2\Dendrobium\checkpoints\best_orchid_model.pt"
+```bash
+python scripts/run_orchid_evaluation.py \
+  --router-checkpoint artifacts/orchid/genus_router/mobilenet_v2/checkpoints/best_orchid_model.pt \
+  --expert-checkpoint "Phalaenopsis=artifacts/orchid/species_experts/mobilenet_v2/Phalaenopsis/checkpoints/best_orchid_model.pt" \
+  --expert-checkpoint "Dendrobium=artifacts/orchid/species_experts/mobilenet_v2/Dendrobium/checkpoints/best_orchid_model.pt"
 ```
 
 Add one `--expert-checkpoint "Genus=path"` line for every trained expert. The
 reports are written to:
 
 ```text
-artifacts\orchid\cascade_evaluation\top2\reports\
+artifacts/orchid/cascade_evaluation/top2/reports
 ```
 
 Keep both `metrics.json` and `predictions.csv`. The default command evaluates
-top-2 routing. Add `--unknown-policy path\to\unknown_policy.json` only after
+top-2 routing. Add `--unknown-policy path/to/unknown_policy.json` only after
 you have fitted and frozen that policy from validation predictions; do not fit it
 on the test split.
 
@@ -192,17 +196,17 @@ on the test split.
 
 First create the mapping for the private taxonomy:
 
-```powershell
-python scripts\prepare_orchid_phylogeny.py `
-  --dataset-root $datasetRoot
+```bash
+python scripts/prepare_orchid_phylogeny.py \
+  --dataset-root $dataset_root
 ```
 
-After reviewing `artifacts\orchid\phylogeny\species_mapping.csv`, add both
+After reviewing `artifacts/orchid/phylogeny/species_mapping.csv`, add both
 arguments to the evaluation command:
 
-```powershell
-  --phylogeny-tree-directory data\phylogeny\perez_escobar_2024\extracted `
-  --phylogeny-mapping artifacts\orchid\phylogeny\species_mapping.csv
+```bash
+  --phylogeny-tree-directory data/phylogeny/perez_escobar_2024/extracted \
+  --phylogeny-mapping artifacts/orchid/phylogeny/species_mapping.csv
 ```
 
 Use this as an error-severity analysis only. It does not prove the visual model
@@ -212,45 +216,45 @@ learned phylogeny.
 
 Export the router:
 
-```powershell
-python scripts\export_orchid_litert.py `
-  --checkpoint artifacts\orchid\genus_router\mobilenet_v2\checkpoints\best_orchid_model.pt `
-  --output artifacts\orchid\exports\router-genus.tflite `
-  --role router `
-  --entry-output artifacts\orchid\exports\router-entry.json
+```bash
+python scripts/export_orchid_litert.py \
+  --checkpoint artifacts/orchid/genus_router/mobilenet_v2/checkpoints/best_orchid_model.pt \
+  --output artifacts/orchid/exports/router-genus.tflite \
+  --role router \
+  --entry-output artifacts/orchid/exports/router-entry.json
 ```
 
 Export one expert (repeat for every expert):
 
-```powershell
-python scripts\export_orchid_litert.py `
-  --checkpoint artifacts\orchid\species_experts\mobilenet_v2\Phalaenopsis\checkpoints\best_orchid_model.pt `
-  --output artifacts\orchid\exports\Phalaenopsis.tflite `
-  --role expert `
-  --genus Phalaenopsis `
-  --entry-output artifacts\orchid\exports\Phalaenopsis-entry.json
+```bash
+python scripts/export_orchid_litert.py \
+  --checkpoint artifacts/orchid/species_experts/mobilenet_v2/Phalaenopsis/checkpoints/best_orchid_model.pt \
+  --output artifacts/orchid/exports/Phalaenopsis.tflite \
+  --role expert \
+  --genus Phalaenopsis \
+  --entry-output artifacts/orchid/exports/Phalaenopsis-entry.json
 ```
 
 ## 10. Build the deployment manifest and compressed pack
 
 Merge the router and every expert entry manifest:
 
-```powershell
-python scripts\build_orchid_deployment_manifest.py `
-  --entry-manifest artifacts\orchid\exports\router-entry.json `
-  --entry-manifest artifacts\orchid\exports\Phalaenopsis-entry.json `
-  --output artifacts\orchid\exports\deployment_manifest.json
+```bash
+python scripts/build_orchid_deployment_manifest.py \
+  --entry-manifest artifacts/orchid/exports/router-entry.json \
+  --entry-manifest artifacts/orchid/exports/Phalaenopsis-entry.json \
+  --output artifacts/orchid/exports/deployment_manifest.json
 ```
 
 Add an `--entry-manifest` argument for every remaining genus. Then package the
 models. `--model-directory` must contain the exported `.tflite` files referenced
 by the deployment manifest.
 
-```powershell
-python scripts\package_orchid_models.py `
-  --manifest artifacts\orchid\exports\deployment_manifest.json `
-  --model-directory artifacts\orchid\exports `
-  --output artifacts\orchid\exports\orchid_models.pack
+```bash
+python scripts/package_orchid_models.py \
+  --manifest artifacts/orchid/exports/deployment_manifest.json \
+  --model-directory artifacts/orchid/exports \
+  --output artifacts/orchid/exports/orchid_models.pack
 ```
 
 Copy only the validated deployment manifest and generated pack(s) into the

@@ -1,12 +1,15 @@
 experiment_id: baseline_flat/mobilenet_v2
 dataset:
   root_dir: /datasets/taxonomic-orchid
-  split_manifest: artifacts/leakage_audit/orchid_split.csv
+  split_manifest: artifacts/leakage_audit/orchid_split_hash_grouped.csv
   task: flat_species
 training:
   model_name: mobilenet_v2
   img_size: 224
-  batch_size: 32
+  batch_size: 128
+  # batch_size: 256
+  # This is a cap; EarlyStopping ends the run sooner when validation loss
+  # stops meaningfully improving.
   epochs: 20
   learning_rate: 0.001
   optimizer: adam
@@ -14,3 +17,16 @@ training:
   data_augmentation: true
   sampler: false
   class_weights: true
+  callbacks:
+    - ReduceLROnPlateau
+    - EarlyStopping
+  ReduceLROnPlateau_monitor: val_loss
+  ReduceLROnPlateau_factor: 0.2
+  ReduceLROnPlateau_patience: 2
+  ReduceLROnPlateau_min_delta: 0.002
+  ReduceLROnPlateau_min_lr: 0.000001
+  ReduceLROnPlateau_verbose: true
+  EarlyStopping_monitor: val_loss
+  EarlyStopping_patience: 5
+  EarlyStopping_min_delta: 0.002
+  EarlyStopping_verbose: true

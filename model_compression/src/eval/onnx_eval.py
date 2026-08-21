@@ -20,6 +20,7 @@ from model_compression.src.utils.metrics import (
     plot_roc_auc_curve,
     plot_radar_chart,
     plot_calibration_curve,
+    export_readable_metrics_report,
     plot_log_loss
 )
 
@@ -99,6 +100,7 @@ def test_inference_onnx(
                 y_true_arr, y_proba_arr,
                 title="Calibration Curve", save_path=os.path.join(save_dir, "ONNX_calibration.png")
             )
+        export_readable_metrics_report(metrics, y_true_arr, y_pred_arr, y_proba_arr, save_dir, classes)
         logging.info(f"Saved ONNX evaluation plots to {save_dir}")
     
     return metrics

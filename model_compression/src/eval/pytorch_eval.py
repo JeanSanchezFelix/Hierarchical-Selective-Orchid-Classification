@@ -1,5 +1,6 @@
 import os
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 
 import numpy as np
@@ -19,8 +20,36 @@ from model_compression.src.utils.metrics import (
     plot_roc_auc_curve,
     plot_radar_chart,
     plot_calibration_curve,
+    export_readable_metrics_report,
 )
 from model_compression.src.eval.predictions import _compute_predictions, _compute_loss_and_predictions
+
+
+def _display_class_name(class_id: str) -> str:
+    """Return the human-facing species name from a stable taxonomy ID."""
+    return class_id.split("::", maxsplit=1)[-1]
+
+
+def _ordered_image_paths(data_loader: DataLoader) -> Optional[List[str]]:
+    """Return test paths in DataLoader order when backed by TransformSubset."""
+    if data_loader.sampler.__class__.__name__ != "SequentialSampler":
+        return None
+    wrapper = data_loader.dataset
+    subset = getattr(wrapper, "subset", wrapper)
+    if not hasattr(subset, "indices") or not hasattr(subset, "dataset"):
+        return None
+    root_dataset = subset.dataset
+    image_folder = getattr(root_dataset, "dataset", root_dataset)
+    samples = getattr(image_folder, "samples", None)
+    root_dir = getattr(root_dataset, "rootDir", None)
+    if samples is None:
+        return None
+    paths = [Path(samples[index][0]) for index in subset.indices]
+    if root_dir is not None:
+        root = Path(root_dir)
+        return [path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path) for path in paths]
+    return [str(path) for path in paths]
+
 
 def test_inference(
     model: nn.Module,
@@ -84,6 +113,9 @@ def test_inference(
             else:
                 probs, preds = _compute_predictions(outputs)
 
+            if len(classes) == 1:
+                probs = torch.ones((batch_size, 1), dtype=outputs.dtype, device=outputs.device)
+                preds = torch.zeros(batch_size, dtype=torch.long, device=outputs.device)
             y_true.extend(labels.cpu().detach().numpy())
             y_pred.extend(preds.cpu().detach().numpy())
             y_proba.extend(probs.cpu().detach().numpy())
@@ -91,32 +123,47 @@ def test_inference(
     logging.info("Inference complete.")   
 
     # Calculate metrics.
-    y_true_arr, y_pred_arr = np.array(y_true), np.array(y_pred)
-    y_proba_arr = np.array(y_proba) if y_proba else None
+    y_true_arr = np.asarray(y_true).reshape(-1)
+    y_pred_arr = np.asarray(y_pred).reshape(-1)
+    y_proba_arr = np.asarray(y_proba) if y_proba else None
+    if y_proba_arr is not None and y_proba_arr.ndim == 1:
+        y_proba_arr = y_proba_arr.reshape(-1, 1)
+    observed_class_ids = np.unique(y_true_arr)
+    observed_class_names = [_display_class_name(classes[index]) for index in observed_class_ids]
+    confusion_class_ids = np.unique(np.concatenate((y_true_arr, y_pred_arr)))
+    confusion_class_names = [_display_class_name(classes[index]) for index in confusion_class_ids]
     metrics = calculate_metrics(y_true_arr, y_pred_arr, y_proba_arr)
 
     if criterion:
         metrics["loss"] = total_loss / total_samples
+
+    image_paths = _ordered_image_paths(data_loader)
+    if image_paths is not None and len(image_paths) != len(y_true_arr):
+        logging.warning("Image paths do not match inference order; omitting them from metrics export.")
+        image_paths = None
 
     # Save plots if directory provided
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
         plot_metric_bar(metrics, title="Test Metrics", save_path=os.path.join(save_dir, "metrics.png"))
         plot_confusion_matrix(
-            y_true_arr, y_pred_arr, labels=classes,
+            y_true_arr, y_pred_arr, labels=confusion_class_names,
             title="Confusion Matrix", save_path=os.path.join(save_dir, "confusion_matrix.png")
         )
         plot_radar_chart(metrics, save_path=os.path.join(save_dir, "radar_chart.png"))
-        if y_proba_arr is not None:
-            classes = data_loader.dataset.classes
+        if y_proba_arr is not None and len(observed_class_ids) >= 2:
+            observed_proba = y_proba_arr if y_proba_arr.shape[1] == 1 else y_proba_arr[:, observed_class_ids]
             plot_roc_auc_curve(
-                y_true_arr, y_proba_arr, classes,
+                y_true_arr, observed_proba, observed_class_names,
                 title="ROC-AUC Curve", save_path=os.path.join(save_dir, "roc_auc.png")
             )
             plot_calibration_curve(
-                y_true_arr, y_proba_arr, classes,
+                y_true_arr, observed_proba, observed_class_names,
                 title="Calibration Curve", save_path=os.path.join(save_dir, "calibration.png")
             )
+        elif y_proba_arr is not None:
+            logging.warning("Skipping ROC and calibration plots: the evaluation split contains fewer than two classes.")
+        export_readable_metrics_report(metrics, y_true_arr, y_pred_arr, y_proba_arr, save_dir, classes, image_paths)
         logging.info(f"Saved evaluation plots to {save_dir}")
     
     return metrics

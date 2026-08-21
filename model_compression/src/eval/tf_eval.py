@@ -11,6 +11,7 @@ from model_compression.src.utils.metrics import (
     plot_roc_auc_curve,
     plot_radar_chart,
     plot_calibration_curve,
+    export_readable_metrics_report,
     plot_log_loss
 )
 
@@ -128,6 +129,7 @@ def test_inference_savedmodel(
         # plot_log_loss(metrics, title="Log Loss over epochs", save_path=os.path.join(save_dir, "tf_log_loss.png"))
         plot_roc_auc_curve(y_true_arr, y_proba_arr, save_path=os.path.join(save_dir, "tf_roc_auc.png"))
         plot_calibration_curve(y_true_arr, y_proba_arr, save_path=os.path.join(save_dir, "tf_calibration.png"))
+        export_readable_metrics_report(metrics, y_true_arr, y_pred_arr, y_proba_arr, save_dir, class_names)
         logging.info(f"Saved TF SavedModel plots to {save_dir}")
 
     return metrics

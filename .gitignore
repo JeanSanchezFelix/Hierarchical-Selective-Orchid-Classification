@@ -55,3 +55,5 @@ model_compression/src/train/testTrain.py
 
 # Local application configuration
 config.yaml
+model_compression/src/utils/metrics.py.orig
+model_compression/src/utils/metrics.py.rej
