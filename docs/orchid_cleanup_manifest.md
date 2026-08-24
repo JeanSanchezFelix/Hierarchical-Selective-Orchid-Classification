@@ -13,24 +13,18 @@ cleanup action in a later phase.
 | `datasets/TaxonomicOrchidDataset.py` | Existing taxonomy-aware folder scanner; refactor for the public data contract | 2-3 |
 | `datasets/CustomHierarchicalDataset.py` | Existing hierarchy and image-folder support; inspect before replacement | 2-3 |
 | `model_compression/src/orchid/` | Orchid-specific taxonomy, calibration, export, artifact, and evaluation foundations | 3-4 |
-| `scripts/train_orchid_*.py` | Cascade baselines and migration reference | 3 |
-| `scripts/run_orchid_evaluation.py` | Cascade baseline evaluation reference | 3-4 |
 | `scripts/prepare_orchid_phylogeny.py` | Optional error-severity analysis | 4 |
 | `tools/orchid_split_audit.py` | Duplicate and split auditing base | 2 |
 | `configs/orchid/` | Existing configuration location | 2-5 |
 | `tests/test_orchid_*.py` | Orchid contract test base | 2-5 |
-| `docs/orchid_*.md` | Existing documentation to be superseded or updated after the new harness exists | 6 |
+| `docs/orchid_setup.md` | Canonical public experiment runbook | 5 |
 | `requirements.txt` | Dependency source; narrow only after the final import audit | 6 |
 
 ## Replace After Parity Tests
 
 | Path | Reason | Replacement condition |
 | --- | --- | --- |
-| `scripts/orchid_training.py` | Task-specific single-head launcher cannot express all proposed methods | Unified configuration runner passes smoke and baseline parity tests |
-| `model_compression/src/orchid/evaluation.py` | Current report shape is cascade-centered | New evaluator reproduces C1/C2 reports and emits common prediction schema |
-| `model_compression/src/orchid/calibration.py` | Current policy is cascade-specific | Hierarchical calibration unit and integration tests pass |
-| `docs/orchid_experiments.md` | Current protocol centers the cascade and Android deployment | New paper protocol and setup guide are verified |
-| `docs/orchid_setup.md` | Current guide assumes a private dataset and cascade workflow | Public acquisition and unified runner are verified |
+| None | Superseded components were removed after the unified runner passed focused tests. | N/A |
 
 ## Candidate Removal After Approval
 
