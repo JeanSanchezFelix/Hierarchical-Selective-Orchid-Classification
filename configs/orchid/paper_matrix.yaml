@@ -1,0 +1,14 @@
+experiment_id: public-50k/orchid-hsc-paper
+dataset_id: inaturalist-orchidaceae-50k-v1
+seeds: [17, 42, 123]
+reference_method: flat_hsc
+methods:
+  - cascade_top1
+  - cascade_top2
+  - flat_ce
+  - flat_balanced_softmax
+  - flat_hsc
+  - dual_head
+  - dual_head_taxonomy_hsc
+# Prediction files must use paths relative to the dataset root. The runner
+# verifies identical held-out rows before computing paired statistics.

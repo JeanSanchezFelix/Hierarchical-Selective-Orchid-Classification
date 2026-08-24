@@ -31,6 +31,9 @@ class EvaluationRecord:
     joint_probability: float | None
     is_unknown: bool
     unknown_reason: str | None
+    image_file: str = ""
+    decision_level: str = "species"
+    confidence: float | None = None
 
 
 def load_bundle_model(path: str | Path, device: torch.device) -> tuple[torch.nn.Module, dict]:
@@ -128,6 +131,10 @@ def evaluate_cascade(
     )
     test_loader = loaders["test"]
     records: list[EvaluationRecord] = []
+    source_indices = list(test_loader.dataset.subset.indices)
+    root_dataset = test_loader.dataset.subset.dataset
+    image_folder = getattr(root_dataset, "dataset", root_dataset)
+    cursor = 0
     with torch.no_grad():
         for batch in test_loader:
             inputs, target_indices = batch[:2]
@@ -160,7 +167,11 @@ def evaluate_cascade(
                     joint_probability=decision.best_candidate_score,
                     is_unknown=decision.is_unknown,
                     unknown_reason=decision.reason,
+                    image_file=Path(image_folder.samples[source_indices[cursor + image_index]][0]).relative_to(root_dataset.rootDir).as_posix(),
+                    decision_level="unknown" if decision.is_unknown else "species",
+                    confidence=decision.best_candidate_score,
                 ))
+            cursor += len(target_indices)
     summary = summarize_records(records, phylogeny_labels, phylogeny_matrix)
     write_evaluation_report(records, summary, output_dir)
     return summary

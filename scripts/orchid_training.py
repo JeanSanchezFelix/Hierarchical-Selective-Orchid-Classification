@@ -8,11 +8,14 @@ taxonomy and run provenance.
 from __future__ import annotations
 
 import copy
+import random
 import sys
 from pathlib import Path
 from typing import Any
 
 import yaml
+import numpy as np
+import torch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -64,6 +67,13 @@ def run_training(config: dict[str, Any], artifact_root: str | Path = "artifacts/
     """Train one configured task and save its provenance beside its checkpoints."""
     dataset_config = config["dataset"]
     training = config["training"]
+    seed = training.get("seed")
+    if seed is not None:
+        random.seed(int(seed))
+        np.random.seed(int(seed))
+        torch.manual_seed(int(seed))
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(int(seed))
     layout = OrchidArtifactLayout.create(artifact_root, config["experiment_id"])
     root_dir = Path(dataset_config["root_dir"]).expanduser().resolve()
     manifest = Path(dataset_config["split_manifest"]).expanduser().resolve()
@@ -92,6 +102,7 @@ def run_training(config: dict[str, Any], artifact_root: str | Path = "artifacts/
             "target_genus": dataset_config.get("target_genus"),
             "class_labels": inventory.classes,
             "training": training,
+            "seed": int(seed) if seed is not None else None,
             "model_name": training.get("model_name", "mobilenet_v2"),
             "img_size": int(training.get("img_size", 224)),
             "normalization": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
