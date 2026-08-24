@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
+import torch
 
 from .routing import CascadeResult, softmax
+from .models import OrchidTaxonomyIndex, aggregate_species_probabilities
 
 
 @dataclass(frozen=True)
@@ -101,3 +103,86 @@ def apply_unknown_policy(result: CascadeResult, policy: UnknownPolicy) -> OpenSe
     if margin < policy.min_margin:
         return OpenSetDecision(True, "low_candidate_margin", candidate.species_id, candidate.joint_probability)
     return OpenSetDecision(False, None, candidate.species_id, candidate.joint_probability)
+
+
+@dataclass(frozen=True)
+class HierarchicalSelectivePolicy:
+    """Calibration-only decision rule for flat and dual-head orchid models."""
+
+    species_temperature: float
+    genus_temperature: float
+    min_species_probability: float
+    min_genus_probability: float
+    min_species_margin: float
+    target_known_coverage: float
+    uses_genus_head: bool
+
+
+def fit_hierarchical_selective_policy(
+    species_logits: np.ndarray,
+    species_targets: Sequence[int],
+    taxonomy: OrchidTaxonomyIndex,
+    genus_logits: np.ndarray | None = None,
+    target_known_coverage: float = 0.95,
+) -> HierarchicalSelectivePolicy:
+    """Fit temperatures and abstention thresholds only from calibration rows."""
+    if not 0 < target_known_coverage <= 1:
+        raise ValueError("target_known_coverage must be in (0, 1].")
+    species_scaler = TemperatureScaler.fit(species_logits, species_targets)
+    species_probabilities = np.asarray([species_scaler.transform(row) for row in species_logits])
+    species_top = species_probabilities.max(axis=1)
+    sorted_species = np.sort(species_probabilities, axis=1)
+    margin = sorted_species[:, -1] - sorted_species[:, -2]
+    genus_targets = taxonomy.genus_targets(torch.as_tensor(species_targets, dtype=torch.long)).cpu().numpy()
+    uses_genus_head = genus_logits is not None
+    if genus_logits is not None:
+        genus_scaler = TemperatureScaler.fit(genus_logits, genus_targets)
+        genus_probabilities = np.asarray([genus_scaler.transform(row) for row in genus_logits])
+    else:
+        genus_scaler = TemperatureScaler(1.0)
+        species_tensor = torch.as_tensor(species_logits, dtype=torch.float32)
+        genus_probabilities = aggregate_species_probabilities(species_tensor / species_scaler.temperature, taxonomy).cpu().numpy()
+    genus_top = genus_probabilities.max(axis=1)
+    quantile = 1.0 - target_known_coverage
+    return HierarchicalSelectivePolicy(
+        species_temperature=species_scaler.temperature,
+        genus_temperature=genus_scaler.temperature,
+        min_species_probability=float(np.quantile(species_top, quantile)),
+        min_genus_probability=float(np.quantile(genus_top, quantile)),
+        min_species_margin=float(np.quantile(margin, quantile)),
+        target_known_coverage=target_known_coverage,
+        uses_genus_head=uses_genus_head,
+    )
+
+
+def hierarchical_decisions(
+    species_logits: np.ndarray,
+    taxonomy: OrchidTaxonomyIndex,
+    policy: HierarchicalSelectivePolicy,
+    genus_logits: np.ndarray | None = None,
+) -> list[dict[str, object]]:
+    """Return species, genus, or Unknown decisions without tuning on this data."""
+    species_probabilities = np.asarray([softmax(row / policy.species_temperature) for row in species_logits])
+    species_tensor = torch.as_tensor(species_logits / policy.species_temperature, dtype=torch.float32)
+    implied_genus = aggregate_species_probabilities(species_tensor, taxonomy).cpu().numpy()
+    if policy.uses_genus_head:
+        if genus_logits is None:
+            raise ValueError("This policy requires genus logits.")
+        genus_probabilities = np.asarray([softmax(row / policy.genus_temperature) for row in genus_logits])
+    else:
+        genus_probabilities = implied_genus
+    decisions: list[dict[str, object]] = []
+    for species_values, genus_values in zip(species_probabilities, genus_probabilities):
+        ranked = np.argsort(-species_values, kind="mergesort")
+        species_index = int(ranked[0])
+        margin = float(species_values[ranked[0]] - species_values[ranked[1]])
+        genus_index = int(np.argmax(genus_values))
+        species_probability = float(species_values[species_index])
+        genus_probability = float(genus_values[genus_index])
+        if species_probability >= policy.min_species_probability and margin >= policy.min_species_margin:
+            decisions.append({"decision_level": "species", "species_index": species_index, "genus_index": taxonomy.species_to_genus[species_index], "confidence": species_probability, "margin": margin})
+        elif genus_probability >= policy.min_genus_probability:
+            decisions.append({"decision_level": "genus", "species_index": None, "genus_index": genus_index, "confidence": genus_probability, "margin": margin})
+        else:
+            decisions.append({"decision_level": "unknown", "species_index": None, "genus_index": None, "confidence": max(species_probability, genus_probability), "margin": margin})
+    return decisions

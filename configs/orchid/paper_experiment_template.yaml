@@ -1,0 +1,25 @@
+# Copy this file per condition. The only dataset-specific values are root_dir,
+# split_manifest, and dataset_id; no model code changes are required.
+experiment_id: public-50k/ours-dual-head-hsc
+dataset:
+  dataset_id: inaturalist-orchidaceae-50k-v1
+  root_dir: data/orchidaceae-inat-v1
+  split_manifest: data/orchidaceae-inat-v1/manifests/split.csv
+  taxonomy_manifest: data/orchidaceae-inat-v1/manifests/taxonomy.json
+method:
+  id: dual_head_taxonomy_hsc
+  backbone: mobilenet_v2
+  use_imagenet_weights: true
+  species_loss: balanced_softmax
+  genus_weight: 1.0
+  consistency_weight: 0.25
+training:
+  image_size: 224
+  batch_size: 64
+  epochs: 30
+  optimizer: adamw
+  learning_rate: 0.0003
+  seed: 17
+evaluation:
+  calibration_split: calibration
+  reporting_split: test

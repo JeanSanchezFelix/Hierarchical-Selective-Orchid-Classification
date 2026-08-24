@@ -26,16 +26,22 @@ from .parsing import parse
 from .logging_setup import configure_logging
 
 # Metrics and plotting
-from .metrics import (
-    calculate_metrics,
-    plot_metric_bar,
-    plot_confusion_matrix,
-    plot_train_val_curve,
-    plot_roc_auc_curve,
-    plot_calibration_curve,
-    export_readable_metrics_report,
-    plot_log_loss  
-)
+try:
+    from .metrics import (
+        calculate_metrics,
+        plot_metric_bar,
+        plot_confusion_matrix,
+        plot_train_val_curve,
+        plot_roc_auc_curve,
+        plot_calibration_curve,
+        export_readable_metrics_report,
+        plot_log_loss,
+    )
+except ModuleNotFoundError as error:
+    # Data loading must remain usable for the orchid experiment runner when the
+    # optional PyCM plotting dependency is absent from a local environment.
+    if error.name != "pycm":
+        raise
 
 # Benchmarking tools
 from .benchmarking import (

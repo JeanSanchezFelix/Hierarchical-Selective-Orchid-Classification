@@ -12,12 +12,13 @@ from model_compression.src.utils.preprocessing import load_data
 
 
 class TestOrchidContracts(unittest.TestCase):
-    def make_dataset(self, root: Path) -> Path:
+    def make_dataset(self, root: Path, include_calibration: bool = False) -> Path:
         labels = {"Alpha": ["one", "two"], "Beta": ["three"]}
         rows = []
         for genus, species_list in labels.items():
             for species in species_list:
-                for number, split in enumerate(("train", "val", "test")):
+                split_names = ("train", "val", "calibration", "test") if include_calibration else ("train", "val", "test")
+                for number, split in enumerate(split_names):
                     relative = Path(genus) / species / f"{number}.png"
                     target = root / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -46,6 +47,18 @@ class TestOrchidContracts(unittest.TestCase):
                 "use_minority_augmentation": False,
             })
             self.assertEqual({name: len(loader.dataset) for name, loader in loaders.items()}, {"train": 2, "val": 2, "test": 2})
+
+    def test_manifest_preserves_calibration_loader(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "orchids"
+            manifest = self.make_dataset(root, include_calibration=True)
+            loaders = load_data("TaxonomicOrchid", batch_size=2, split_manifest=str(manifest), dataset_kwargs={
+                "root_dir": str(root), "task": "flat_species", "use_class_balances": False,
+                "use_minority_augmentation": False,
+            })
+            self.assertEqual({name: len(loader.dataset) for name, loader in loaders.items()}, {
+                "train": 3, "val": 3, "calibration": 3, "test": 3,
+            })
 
     def test_checkpoint_requires_deployment_metadata(self):
         with tempfile.TemporaryDirectory() as directory:

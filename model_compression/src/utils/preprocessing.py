@@ -49,7 +49,7 @@ def _manifest_subsets(
     root_dir: str,
     manifest_path: str,
 ) -> Dict[str, Subset]:
-    """Create train/validation/test subsets from a reviewed split manifest.
+    """Create manifest subsets, retaining an optional calibration split.
 
     The manifest must contain relative ``image_path`` and ``split`` columns.
     Image paths are matched against the dataset's underlying ImageFolder samples,
@@ -65,7 +65,7 @@ def _manifest_subsets(
         os.path.normcase(os.path.abspath(path)): index
         for index, (path, _) in enumerate(samples)
     }
-    indices: Dict[str, list[int]] = {"train": [], "val": [], "test": []}
+    indices: Dict[str, list[int]] = {"train": [], "val": [], "calibration": [], "test": []}
     assigned: set[int] = set()
 
     with open(manifest_path, newline="", encoding="utf-8") as stream:
@@ -95,11 +95,13 @@ def _manifest_subsets(
         raise ValueError(
             f"Manifest assigns {len(assigned)} of {len(samples)} dataset images; {unassigned} images are unassigned."
         )
-    empty_splits = [split for split, values in indices.items() if not values]
+    # Legacy manifests have three splits. Public paper manifests add calibration
+    # and downstream code can consume it without changing their baseline paths.
+    empty_splits = [split for split in ("train", "val", "test") if not indices[split]]
     if empty_splits:
         raise ValueError(f"Manifest has empty required split(s): {empty_splits}")
 
-    return {split: Subset(dataset, values) for split, values in indices.items()}
+    return {split: Subset(dataset, values) for split, values in indices.items() if values}
     
 def _log_dataset_statistics(
     dataset: Dataset,
@@ -240,6 +242,8 @@ def load_data(
             loaders["train"] = DataLoader(train_subset, batch_size=batch_size, sampler=sampler, shuffle=not use_sampler)
             loaders["val"] = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
             loaders["test"] = DataLoader(test_subset, batch_size=batch_size, shuffle=False)
+            if "calibration" in manifest_subsets:
+                loaders["calibration"] = DataLoader(TransformSubset(manifest_subsets["calibration"], basic_transform), batch_size=batch_size, shuffle=False)
 
         # Check for pre-split folders
         elif all(os.path.isdir(os.path.join(root_dir, split)) for split in ['train', 'val']):
