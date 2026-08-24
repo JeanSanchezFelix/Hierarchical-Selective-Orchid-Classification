@@ -1,272 +1,189 @@
-# Orchid classifier: beginner run guide
+# Orchid Paper: Start-to-Finish Runbook
 
-This guide runs the complete research workflow from a private image folder to
-LiteRT model-pack artifacts. Run commands from a Bash shell (for example, a Linux
-terminal). The dataset remains private; only derived artifacts are written under `artifacts/orchid/`.
+This is the sole execution guide for the public Orchidaceae paper. Run every
+command from PowerShell at the repository root. It does not use the private
+dataset, Android application, or physical-device claims.
 
-## 1. Open the repository
+## 0. One-Time Environment Setup
 
-```bash
-cd "/path/to/model-compression"
-```
-
-## 2. Create or use the Python environment
-
-The pinned dependencies target Python 3.12. If `orchid_edge` already exists,
-skip the creation command.
-
-```bash
+```powershell
+cd C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression
 conda create -n orchid_edge python=3.12 -y
 conda activate orchid_edge
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python --version
+python -m unittest discover -s tests -p "test_orchid_*.py" -v
 ```
 
-If `conda activate` is unavailable in the terminal, prefix every Python command
-in this guide with `conda run -n orchid_edge`, for example:
+If `conda activate` is unavailable, use `conda run --no-capture-output -n
+orchid_edge python` in place of `python` below.
 
-```bash
-conda run -n orchid_edge python scripts/train_orchid_router.py
+## 1. Freeze the Public Dataset
+
+Choose a dated official iNaturalist metadata snapshot. Replace `YYYYMMDD` with
+the exact snapshot identifier you selected; never use a moving `latest` source.
+
+```powershell
+$snapshot = "YYYYMMDD"
+$metadata = "data/inaturalist-metadata-$snapshot"
+$dataset = "data/orchidaceae-inat-v1"
+
+python scripts/prepare_public_orchid_dataset.py fetch-metadata `
+  --metadata-dir $metadata --snapshot $snapshot
+
+python scripts/prepare_public_orchid_dataset.py build-manifest `
+  --metadata-dir $metadata --source-snapshot $snapshot --output-root $dataset
+
+python scripts/prepare_public_orchid_dataset.py validate --output-root $dataset
 ```
 
-The dependency file requests CUDA 12.4 PyTorch wheels. A CUDA-capable NVIDIA
-GPU is optional; the workflow can run on CPU, but training will take longer.
+Review the manifests under `$dataset/manifests` before downloading. Downloading
+the selected roughly 50,000 image files is required for training and is
+resumable.
 
-## 3. Place and verify the private dataset
+```powershell
+python scripts/prepare_public_orchid_dataset.py download-images `
+  --output-root $dataset --workers 8
 
-The expected hierarchy is exactly:
+python scripts/prepare_public_orchid_dataset.py validate --output-root $dataset
+```
+
+Do not change the dataset configuration or manifest after inspecting model
+results. All methods must use the same frozen root and split file.
+
+## 2. Run All Single-Model Conditions
+
+The five trainable conditions are `flat_ce`, `flat_balanced_softmax`,
+`flat_hsc`, `dual_head`, and `dual_head_taxonomy_hsc` (Ours). The command
+trains, calibrates, and evaluates one condition for one seed.
+
+```powershell
+$root = "data/orchidaceae-inat-v1"
+$manifest = "$root/manifests/split.csv"
+$experiment = "public-50k/orchid-hsc-paper"
+$seeds = 17, 42, 123
+$methods = "flat_ce", "flat_balanced_softmax", "flat_hsc", "dual_head", "dual_head_taxonomy_hsc"
+
+foreach ($seed in $seeds) {
+  foreach ($method in $methods) {
+    python scripts/run_orchid_experiment.py all `
+      --config configs/orchid/paper_experiment_template.yaml `
+      --dataset-root $root --split-manifest $manifest `
+      --experiment-id $experiment --method $method --seed $seed
+  }
+}
+```
+
+Each run writes its checkpoint, calibration policy, metrics, and image-level
+predictions to `artifacts/orchid/$experiment/<method>/seed-<seed>/`.
+
+## 3. Run Both Cascade Controls
+
+This trains one router and every genus expert, then evaluates C1 top-1 and C2
+top-2 routing for each seed. The cascade config must point at the same frozen
+root and split manifest. The following command updates a local copy without
+changing the checked-in template.
+
+```powershell
+$cascadeConfig = "artifacts/orchid/paper_cascade_runtime.yaml"
+(Get-Content configs/orchid/paper_cascade_template.yaml) `
+  -replace "root_dir: data/orchidaceae-inat-v1", "root_dir: $root" `
+  -replace "split_manifest: data/orchidaceae-inat-v1/manifests/split.csv", "split_manifest: $manifest" |
+  Set-Content $cascadeConfig
+
+foreach ($seed in $seeds) {
+  python scripts/run_orchid_cascade.py --config $cascadeConfig --seed $seed
+}
+```
+
+Expected reports:
 
 ```text
-taxonomic-orchid/
-  Bletia/
-    Bti. patula/
-      image_001.jpg
-  Cattleya/
-    C. trianae/
-      image_002.jpg
+artifacts/orchid/public-50k/orchid-hsc-paper/cascade_top1/seed-<seed>/reports/
+artifacts/orchid/public-50k/orchid-hsc-paper/cascade_top2/seed-<seed>/reports/
 ```
 
-By default, the configs expect this directory:
+## 4. Aggregate Paper Results
 
-```text
-/datasets/taxonomic-orchid
+Run only after all 21 method-seed evaluations are complete.
+
+```powershell
+python scripts/summarize_orchid_paper_results.py `
+  --matrix configs/orchid/paper_matrix.yaml `
+  --artifact-root artifacts/orchid `
+  --output-dir artifacts/orchid/paper_summary
 ```
 
-If your dataset is elsewhere, edit `dataset.root_dir` in all three files before
-continuing:
+This creates `seed_metrics.csv`, `paired_bootstrap.json`,
+`risk_coverage.csv`, and `paper_table_hAURC.md`.
 
-```text
-configs/orchid/baseline_flat.yaml
-configs/orchid/genus_router.yaml
-configs/orchid/expert_template.yaml
+## 5. Record Edge-Ready Evidence
+
+Use host CPU only; do not call this Android performance. Audit every frozen
+condition. For a single model, pass one checkpoint. For cascades, pass the
+router plus every expert checkpoint; the report records the correct model count
+and inference-call count.
+
+```powershell
+python scripts/audit_orchid_edge.py `
+  --checkpoint artifacts/orchid/public-50k/orchid-hsc-paper/dual_head_taxonomy_hsc/seed-17/checkpoints/best_orchid_model.pt `
+  --output artifacts/orchid/edge_audits/ours_seed17.json
 ```
 
-Use forward slashes in YAML paths, for example:
+Export only a frozen single-model checkpoint to FP32 LiteRT when conversion is
+available. Record parity from identically ordered logits; do not report INT8
+results until an INT8 conversion and matching parity evaluation have completed.
 
-```yaml
-root_dir: /datasets/taxonomic-orchid
+```powershell
+python scripts/export_orchid_paper_litert.py `
+  --checkpoint artifacts/orchid/public-50k/orchid-hsc-paper/dual_head_taxonomy_hsc/seed-17/checkpoints/best_orchid_model.pt `
+  --output artifacts/orchid/exports/ours_seed17_fp32.tflite
+
+python scripts/compare_orchid_litert_logits.py `
+  --torch-logits artifacts/orchid/parity/ours_seed17_torch_logits.npy `
+  --litert-logits artifacts/orchid/parity/ours_seed17_litert_logits.npy `
+  --output artifacts/orchid/parity/ours_seed17_fp32.json
 ```
 
-Do not put unlabeled non-orchid images inside a genus or species directory.
-Put them in a top-level `UNLABELED/` directory if you keep them beside the
-dataset; the taxonomy scanner ignores that directory.
+## 6. Populate and Build the WACV Manuscript
 
-## 4. Create and audit the frozen train/validation/test split
+```powershell
+cd C:\Users\jampi\VS_Codes\Papers\WACV
 
-Set your dataset path once for the current Bash session:
+python tools/export_orchid_results_to_wacv.py `
+  --summary-dir C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression\artifacts\orchid\paper_summary `
+  --tex-output sec/generated_results.tex `
+  --figure-output figures/hierarchical_risk_coverage.pdf
 
-```bash
-dataset_root="/datasets/taxonomic-orchid"
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
+bibtex main
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
 ```
 
-Create a new dHash-group-disjoint manifest. Near-duplicate images within the
-same species are assigned to one split together; this is still not proof of a
-specimen-disjoint split.
+Replace approximate dataset counts and pre-results language only with values
+from the frozen manifests and generated artifacts. Keep host CPU and Android
+claims separate.
 
-```bash
-python tools/orchid_split_audit.py create-manifest \
-  --dataset-root "$dataset_root" \
-  --output artifacts/leakage_audit/orchid_split_hash_grouped.csv \
-  --group-near-duplicates
+## 7. Run the Submission Gate
+
+```powershell
+cd C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression
+python scripts/validate_orchid_submission.py `
+  --matrix configs/orchid/paper_matrix.yaml `
+  --artifact-root artifacts/orchid `
+  --dataset-manifest data/orchidaceae-inat-v1/manifests/split.csv
 ```
 
-Audit the new manifest. A successful dHash-grouped split should report zero
-cross-split candidates at the same threshold.
+`SUBMISSION GATE PASSED` confirms the required dataset, predictions, summary,
+and paired-bootstrap files exist. It does not validate scientific quality or
+grant permission to make unsupported claims.
 
-```bash
-python tools/orchid_split_audit.py audit \
-  --dataset-root "$dataset_root" \
-  --manifest artifacts/leakage_audit/orchid_split_hash_grouped.csv \
-  --output artifacts/leakage_audit/duplicate_candidates_hash_grouped.csv
-```
+## Non-Negotiable Boundaries
 
-Inspect the audit output, then update `dataset.split_manifest` in all orchid
-YAML configs to `artifacts/leakage_audit/orchid_split_hash_grouped.csv` before
-training. This begins a new experiment: existing model metrics were produced
-with the older image-stratified manifest and are not comparable.
-
-## 5. Run a quick environment check
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-Resolve test failures before training. This command does not train a model.
-
-## 6. Train the required models
-
-Run these in order. Check the generated checkpoint after each command before
-starting the next one.
-
-### B0 — flat species baseline
-
-This is the single 199-species MobileNetV2 comparison.
-
-```bash
-python scripts/train_orchid_baseline.py
-```
-
-Expected checkpoint:
-
-```text
-artifacts/orchid/baseline_flat/mobilenet_v2/checkpoints/best_orchid_model.pt
-```
-
-### B1 — genus router
-
-This model predicts the genus before expert routing.
-
-```bash
-python scripts/train_orchid_router.py
-```
-
-Expected checkpoint:
-
-```text
-artifacts/orchid/genus_router/mobilenet_v2/checkpoints/best_orchid_model.pt
-```
-
-### H1/H2 — genus species experts
-
-Train one expert first. Replace `Phalaenopsis` with a represented genus if you
-prefer a different initial smoke test.
-
-```bash
-python scripts/train_orchid_experts.py --genus Phalaenopsis
-```
-
-Check its `taxonomy.json`, `run_metadata.json`, and
-`checkpoints/best_orchid_model.pt`. Then train every genus:
-
-```bash
-python scripts/train_orchid_experts.py --genus all
-```
-
-A genus with exactly one species is deterministic after genus routing. It should
-be represented as deterministic routing in the mobile deployment rather than
-presented as evidence from a one-class learned model.
-
-## 7. Evaluate the cascade on the held-out test split
-
-Run evaluation only after choosing the final router and all required specialists
-using validation data. Do not select thresholds or architectures from test
-results.
-
-```bash
-python scripts/run_orchid_evaluation.py \
-  --router-checkpoint artifacts/orchid/genus_router/mobilenet_v2/checkpoints/best_orchid_model.pt \
-  --expert-checkpoint "Phalaenopsis=artifacts/orchid/species_experts/mobilenet_v2/Phalaenopsis/checkpoints/best_orchid_model.pt" \
-  --expert-checkpoint "Dendrobium=artifacts/orchid/species_experts/mobilenet_v2/Dendrobium/checkpoints/best_orchid_model.pt"
-```
-
-Add one `--expert-checkpoint "Genus=path"` line for every trained expert. The
-reports are written to:
-
-```text
-artifacts/orchid/cascade_evaluation/top2/reports
-```
-
-Keep both `metrics.json` and `predictions.csv`. The default command evaluates
-top-2 routing. Add `--unknown-policy path/to/unknown_policy.json` only after
-you have fitted and frozen that policy from validation predictions; do not fit it
-on the test split.
-
-## 8. Optional phylogenetic error analysis
-
-First create the mapping for the private taxonomy:
-
-```bash
-python scripts/prepare_orchid_phylogeny.py \
-  --dataset-root $dataset_root
-```
-
-After reviewing `artifacts/orchid/phylogeny/species_mapping.csv`, add both
-arguments to the evaluation command:
-
-```bash
-  --phylogeny-tree-directory data/phylogeny/perez_escobar_2024/extracted \
-  --phylogeny-mapping artifacts/orchid/phylogeny/species_mapping.csv
-```
-
-Use this as an error-severity analysis only. It does not prove the visual model
-learned phylogeny.
-
-## 9. Export frozen winning models to LiteRT
-
-Export the router:
-
-```bash
-python scripts/export_orchid_litert.py \
-  --checkpoint artifacts/orchid/genus_router/mobilenet_v2/checkpoints/best_orchid_model.pt \
-  --output artifacts/orchid/exports/router-genus.tflite \
-  --role router \
-  --entry-output artifacts/orchid/exports/router-entry.json
-```
-
-Export one expert (repeat for every expert):
-
-```bash
-python scripts/export_orchid_litert.py \
-  --checkpoint artifacts/orchid/species_experts/mobilenet_v2/Phalaenopsis/checkpoints/best_orchid_model.pt \
-  --output artifacts/orchid/exports/Phalaenopsis.tflite \
-  --role expert \
-  --genus Phalaenopsis \
-  --entry-output artifacts/orchid/exports/Phalaenopsis-entry.json
-```
-
-## 10. Build the deployment manifest and compressed pack
-
-Merge the router and every expert entry manifest:
-
-```bash
-python scripts/build_orchid_deployment_manifest.py \
-  --entry-manifest artifacts/orchid/exports/router-entry.json \
-  --entry-manifest artifacts/orchid/exports/Phalaenopsis-entry.json \
-  --output artifacts/orchid/exports/deployment_manifest.json
-```
-
-Add an `--entry-manifest` argument for every remaining genus. Then package the
-models. `--model-directory` must contain the exported `.tflite` files referenced
-by the deployment manifest.
-
-```bash
-python scripts/package_orchid_models.py \
-  --manifest artifacts/orchid/exports/deployment_manifest.json \
-  --model-directory artifacts/orchid/exports \
-  --output artifacts/orchid/exports/orchid_models.pack
-```
-
-Copy only the validated deployment manifest and generated pack(s) into the
-Android project. Then rerun the physical-device benchmark with real orchid input
-images; the placeholder-pack latency measurements are not paper results.
-
-## Common problems
-
-| Problem | What to check |
-| --- | --- |
-| `Split manifest not found` | `dataset.split_manifest` in the YAML must point to the reviewed CSV. |
-| `FileNotFoundError` for data | Correct `dataset.root_dir` in all orchid YAML configs. |
-| CUDA / PyTorch installation fails | Verify Python 3.12 and your NVIDIA driver; a CPU-compatible PyTorch install is acceptable for a slower run. |
-| Expert has zero or one class | Check the folder hierarchy and the split CSV; one-species genera should be deterministic. |
-| Android pack fails checksum | Re-export and rebuild the deployment manifest and pack together; never mix files from separate export runs. |
+- Never tune on the test split.
+- Never compare methods trained on different manifests.
+- `Unknown` is known-class uncertainty abstention, not non-orchid detection.
+- Host CPU measurements are not Android or real-time measurements.
+- Do not claim INT8 performance without a separate INT8 conversion and parity
+  report.
