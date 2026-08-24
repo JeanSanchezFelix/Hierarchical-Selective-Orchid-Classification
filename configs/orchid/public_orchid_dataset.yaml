@@ -1,0 +1,53 @@
+# Phase 1 acquisition contract. Phase 2 implements this configuration without
+# downloading the entire iNaturalist Orchidaceae collection.
+dataset_id: inaturalist-orchidaceae-50k-v1
+output_root: data/orchidaceae-inat-v1
+layout: genus_species_image
+
+source:
+  provider: inaturalist-licensed-observation-images
+  family_name: Orchidaceae
+  taxon_rank: species
+  quality_grade: research
+  accepted_photo_licenses:
+    - cc0
+    - cc-by
+  source_snapshot: null  # Phase 2 writes the exact metadata snapshot identity.
+  metadata_transport: aws-open-data
+  image_transport: aws-open-data
+
+selection:
+  target_images: 50000
+  target_species: 200
+  minimum_images_per_species: 40
+  maximum_images_per_species: 500
+  maximum_images_per_observer_per_species: 25
+  images_per_observation: 1
+  image_size: medium
+  preserve_long_tail: true
+  deterministic_selection_seed: 20260822
+
+taxonomy:
+  normalization: accepted-source-taxon
+  species_identifier: genus_double_colon_species
+  retain_source_taxon_id: true
+  retain_synonym_audit: true
+
+splits:
+  group_column: observation_id
+  train: 0.70
+  validation: 0.10
+  calibration: 0.10
+  test: 0.10
+  seed: 17
+
+outputs:
+  manifest_directory: manifests
+  dataset_card: dataset_card.json
+  observations: observations.csv
+  images: images.csv
+  taxonomy: taxonomy.json
+  split: split.csv
+  licenses: licenses.csv
+  checksums: checksums.csv
+  rejected_records: rejected_records.csv
