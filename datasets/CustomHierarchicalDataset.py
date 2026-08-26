@@ -50,6 +50,7 @@ class OrchidTaskImageFolder(ImageFolder):
     def make_dataset(self, directory, class_to_idx, extensions=None, is_valid_file=None, allow_empty=False):
         instances = []
         root = os.path.abspath(directory)
+        allowed_extensions = tuple(dict.fromkeys((*extensions, ".gif"))) if extensions else (".gif",)
         for record in self.taxonomy.records:
             if self.task in {TASK_GENUS_SPECIES, TASK_TARGET_GENUS} and record.genus_id != self.target_genus:
                 continue
@@ -63,7 +64,7 @@ class OrchidTaskImageFolder(ImageFolder):
                     path = os.path.join(current_root, filename)
                     if is_valid_file and not is_valid_file(path):
                         continue
-                    if extensions and not path.lower().endswith(extensions):
+                    if allowed_extensions and not path.lower().endswith(allowed_extensions):
                         continue
                     instances.append((path, class_to_idx[label_name]))
         if not instances and not allow_empty:

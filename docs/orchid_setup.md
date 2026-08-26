@@ -1,13 +1,13 @@
 # Orchid Paper: Start-to-Finish Runbook
 
 This is the sole execution guide for the public Orchidaceae paper. Run every
-command from PowerShell at the repository root. It does not use the private
+command from a Bash shell at the repository root. It does not use the private
 dataset, Android application, or physical-device claims.
 
 ## 0. One-Time Environment Setup
 
-```powershell
-cd C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression
+```bash
+cd /path/to/model-compression
 conda create -n orchid_edge python=3.12 -y
 conda activate orchid_edge
 python -m pip install --upgrade pip
@@ -22,34 +22,42 @@ orchid_edge python` in place of `python` below.
 
 Choose a dated official iNaturalist metadata snapshot. Replace `YYYYMMDD` with
 the exact snapshot identifier you selected; never use a moving `latest` source.
+Run each stage only after the preceding command succeeds; a failed download means the manifests do not yet exist.
 
-```powershell
-$snapshot = "YYYYMMDD"
-$metadata = "data/inaturalist-metadata-$snapshot"
-$dataset = "data/orchidaceae-inat-v1"
+```bash
+snapshot="YYYYMMDD"
+metadata="data/inaturalist-metadata-${snapshot}"
+dataset="data/orchidaceae-inat-v1"
 
-python scripts/prepare_public_orchid_dataset.py fetch-metadata `
-  --metadata-dir $metadata --snapshot $snapshot
+python scripts/prepare_public_orchid_dataset.py fetch-metadata \
+  --metadata-dir "$metadata" \
+  --snapshot "$snapshot"
 
-python scripts/prepare_public_orchid_dataset.py build-manifest `
-  --metadata-dir $metadata --source-snapshot $snapshot --output-root $dataset
+python scripts/prepare_public_orchid_dataset.py build-manifest \
+  --metadata-dir "$metadata" \
+  --source-snapshot "$snapshot" \
+  --output-root "$dataset"
 
-python scripts/prepare_public_orchid_dataset.py validate --output-root $dataset
+python scripts/prepare_public_orchid_dataset.py validate \
+  --output-root "$dataset"
 ```
 
-Review the manifests under `$dataset/manifests` before downloading. Downloading
-the selected roughly 50,000 image files is required for training and is
-resumable.
+Review the manifests under `${dataset}/manifests` before downloading. Downloading
+the selected roughly 50,000 image files is required for training and is resumable.
 
-```powershell
-python scripts/prepare_public_orchid_dataset.py download-images `
-  --output-root $dataset --workers 8
+```bash
+python scripts/prepare_public_orchid_dataset.py download-images \
+  --output-root "$dataset" \
+  --workers 8
 
-python scripts/prepare_public_orchid_dataset.py validate --output-root $dataset
+python scripts/prepare_public_orchid_dataset.py validate \
+  --output-root "$dataset"
 ```
 
-Do not change the dataset configuration or manifest after inspecting model
-results. All methods must use the same frozen root and split file.
+Do not start training until `download-images` completes successfully and the final
+`validate` command succeeds. Until then, the manifest has no local Genus/Species
+image folders. Do not change the dataset configuration or manifest after inspecting
+model results. All methods must use the same frozen root and split file.
 
 ## 2. Run All Single-Model Conditions
 
@@ -57,43 +65,50 @@ The five trainable conditions are `flat_ce`, `flat_balanced_softmax`,
 `flat_hsc`, `dual_head`, and `dual_head_taxonomy_hsc` (Ours). The command
 trains, calibrates, and evaluates one condition for one seed.
 
-```powershell
-$root = "data/orchidaceae-inat-v1"
-$manifest = "$root/manifests/split.csv"
-$experiment = "public-50k/orchid-hsc-paper"
-$seeds = 17, 42, 123
-$methods = "flat_ce", "flat_balanced_softmax", "flat_hsc", "dual_head", "dual_head_taxonomy_hsc"
+```bash
+set -euo pipefail
 
-foreach ($seed in $seeds) {
-  foreach ($method in $methods) {
-    python scripts/run_orchid_experiment.py all `
-      --config configs/orchid/paper_experiment_template.yaml `
-      --dataset-root $root --split-manifest $manifest `
-      --experiment-id $experiment --method $method --seed $seed
-  }
-}
+root="data/orchidaceae-inat-v1"
+manifest="${root}/manifests/split.csv"
+experiment="public-50k/orchid-hsc-paper"
+seeds=(17 42 123)
+methods=(flat_ce flat_balanced_softmax flat_hsc dual_head dual_head_taxonomy_hsc)
+
+for seed in "${seeds[@]}"; do
+  for method in "${methods[@]}"; do
+    python scripts/run_orchid_experiment.py all \
+      --config configs/orchid/paper_experiment_template.yaml \
+      --dataset-root "$root" \
+      --split-manifest "$manifest" \
+      --experiment-id "$experiment" \
+      --method "$method" \
+      --seed "$seed"
+  done
+done
 ```
 
-Each run writes its checkpoint, calibration policy, metrics, and image-level
-predictions to `artifacts/orchid/$experiment/<method>/seed-<seed>/`.
+Each run writes its checkpoint, calibration policy, metrics, image-level
+predictions, and `reports/training.log` to
+`artifacts/orchid/$experiment/<method>/seed-<seed>/`. The log includes any
+Python traceback if that run fails.
 
 ## 3. Run Both Cascade Controls
 
 This trains one router and every genus expert, then evaluates C1 top-1 and C2
 top-2 routing for each seed. The cascade config must point at the same frozen
-root and split manifest. The following command updates a local copy without
-changing the checked-in template.
+root and split manifest. The following command writes a local runtime copy
+without changing the checked-in template.
 
-```powershell
-$cascadeConfig = "artifacts/orchid/paper_cascade_runtime.yaml"
-(Get-Content configs/orchid/paper_cascade_template.yaml) `
-  -replace "root_dir: data/orchidaceae-inat-v1", "root_dir: $root" `
-  -replace "split_manifest: data/orchidaceae-inat-v1/manifests/split.csv", "split_manifest: $manifest" |
-  Set-Content $cascadeConfig
+```bash
+cascade_config="artifacts/orchid/paper_cascade_runtime.yaml"
+sed \
+  -e "s|^  root_dir: .*|  root_dir: ${root}|" \
+  -e "s|^  split_manifest: .*|  split_manifest: ${manifest}|" \
+  configs/orchid/paper_cascade_template.yaml > "$cascade_config"
 
-foreach ($seed in $seeds) {
-  python scripts/run_orchid_cascade.py --config $cascadeConfig --seed $seed
-}
+for seed in "${seeds[@]}"; do
+  python scripts/run_orchid_cascade.py --config "$cascade_config" --seed "$seed"
+done
 ```
 
 Expected reports:
@@ -103,14 +118,19 @@ artifacts/orchid/public-50k/orchid-hsc-paper/cascade_top1/seed-<seed>/reports/
 artifacts/orchid/public-50k/orchid-hsc-paper/cascade_top2/seed-<seed>/reports/
 ```
 
+The router and each expert retain their own `reports/training.log`. The final
+cascade evaluation is written to
+`artifacts/orchid/$experiment/cascade_reports/seed-<seed>/training.log`,
+including a traceback if evaluation fails.
+
 ## 4. Aggregate Paper Results
 
 Run only after all 21 method-seed evaluations are complete.
 
-```powershell
-python scripts/summarize_orchid_paper_results.py `
-  --matrix configs/orchid/paper_matrix.yaml `
-  --artifact-root artifacts/orchid `
+```bash
+python scripts/summarize_orchid_paper_results.py \
+  --matrix configs/orchid/paper_matrix.yaml \
+  --artifact-root artifacts/orchid \
   --output-dir artifacts/orchid/paper_summary
 ```
 
@@ -124,9 +144,9 @@ condition. For a single model, pass one checkpoint. For cascades, pass the
 router plus every expert checkpoint; the report records the correct model count
 and inference-call count.
 
-```powershell
-python scripts/audit_orchid_edge.py `
-  --checkpoint artifacts/orchid/public-50k/orchid-hsc-paper/dual_head_taxonomy_hsc/seed-17/checkpoints/best_orchid_model.pt `
+```bash
+python scripts/audit_orchid_edge.py \
+  --checkpoint artifacts/orchid/public-50k/orchid-hsc-paper/dual_head_taxonomy_hsc/seed-17/checkpoints/best_orchid_model.pt \
   --output artifacts/orchid/edge_audits/ours_seed17.json
 ```
 
@@ -134,25 +154,33 @@ Export only a frozen single-model checkpoint to FP32 LiteRT when conversion is
 available. Record parity from identically ordered logits; do not report INT8
 results until an INT8 conversion and matching parity evaluation have completed.
 
-```powershell
-python scripts/export_orchid_paper_litert.py `
-  --checkpoint artifacts/orchid/public-50k/orchid-hsc-paper/dual_head_taxonomy_hsc/seed-17/checkpoints/best_orchid_model.pt `
+```bash
+python scripts/export_orchid_paper_litert.py \
+  --checkpoint artifacts/orchid/public-50k/orchid-hsc-paper/dual_head_taxonomy_hsc/seed-17/checkpoints/best_orchid_model.pt \
   --output artifacts/orchid/exports/ours_seed17_fp32.tflite
 
-python scripts/compare_orchid_litert_logits.py `
-  --torch-logits artifacts/orchid/parity/ours_seed17_torch_logits.npy `
-  --litert-logits artifacts/orchid/parity/ours_seed17_litert_logits.npy `
+python scripts/generate_orchid_litert_logits.py \
+  --checkpoint artifacts/orchid/public-50k/orchid-hsc-paper/dual_head_taxonomy_hsc/seed-17/checkpoints/best_orchid_model.pt \
+  --litert-model artifacts/orchid/exports/ours_seed17_fp32.tflite \
+  --torch-logits artifacts/orchid/parity/ours_seed17_torch_logits.npy \
+  --litert-logits artifacts/orchid/parity/ours_seed17_litert_logits.npy
+
+python scripts/compare_orchid_litert_logits.py \
+  --torch-logits artifacts/orchid/parity/ours_seed17_torch_logits.npy \
+  --litert-logits artifacts/orchid/parity/ours_seed17_litert_logits.npy \
   --output artifacts/orchid/parity/ours_seed17_fp32.json
 ```
 
 ## 6. Populate and Build the WACV Manuscript
 
-```powershell
-cd C:\Users\jampi\VS_Codes\Papers\WACV
+Run these commands from the separate manuscript repository.
 
-python tools/export_orchid_results_to_wacv.py `
-  --summary-dir C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression\artifacts\orchid\paper_summary `
-  --tex-output sec/generated_results.tex `
+```bash
+cd /path/to/WACV
+
+python tools/export_orchid_results_to_wacv.py \
+  --summary-dir /path/to/model-compression/artifacts/orchid/paper_summary \
+  --tex-output sec/generated_results.tex \
   --figure-output figures/hierarchical_risk_coverage.pdf
 
 pdflatex -interaction=nonstopmode -halt-on-error main.tex
@@ -167,11 +195,11 @@ claims separate.
 
 ## 7. Run the Submission Gate
 
-```powershell
-cd C:\Users\jampi\VS_Codes\UPRM_Code\ML_Projects\model-compression
-python scripts/validate_orchid_submission.py `
-  --matrix configs/orchid/paper_matrix.yaml `
-  --artifact-root artifacts/orchid `
+```bash
+cd /path/to/model-compression
+python scripts/validate_orchid_submission.py \
+  --matrix configs/orchid/paper_matrix.yaml \
+  --artifact-root artifacts/orchid \
   --dataset-manifest data/orchidaceae-inat-v1/manifests/split.csv
 ```
 

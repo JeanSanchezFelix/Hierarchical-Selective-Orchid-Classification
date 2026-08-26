@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import logging
 import random
 import subprocess
 from dataclasses import asdict
@@ -16,13 +17,24 @@ import torch
 import torch.nn.functional as functional
 import yaml
 from sklearn.metrics import f1_score, recall_score
+from tqdm import tqdm
 
 from datasets.TaxonomicOrchidDataset import TaxonomicOrchidDataset
+from model_compression.src.utils.metrics import (
+    calculate_metrics,
+    export_readable_metrics_report,
+    plot_calibration_curve,
+    plot_confusion_matrix,
+    plot_metric_bar,
+    plot_radar_chart,
+    plot_roc_auc_curve,
+)
 from model_compression.src.utils.preprocessing import load_data
 
 from .artifacts import OrchidArtifactLayout
 from .calibration import HierarchicalSelectivePolicy, fit_hierarchical_selective_policy, hierarchical_decisions
 from .checkpoints import load_orchid_checkpoint, save_orchid_checkpoint
+from .paper_results import hierarchical_aurc, risk_coverage_rows
 from .models import (
     BalancedSoftmaxLoss,
     CASCADE_METHODS,
@@ -163,25 +175,64 @@ def train(config: Mapping[str, Any], artifact_root: str | Path = "artifacts/orch
     layout.write_json(layout.run_metadata_path, metadata)
     history = {"train": [], "val": []}
     best_loss = float("inf")
+    epochs_without_improvement = 0
+    training = config["training"]
+    max_epochs = int(training["epochs"])
+    early_stopping_patience = int(training.get("early_stopping_patience", 5))
+    early_stopping_min_delta = float(training.get("early_stopping_min_delta", 1e-4))
+    if early_stopping_patience < 1:
+        raise ValueError("training.early_stopping_patience must be at least 1.")
+    if early_stopping_min_delta < 0:
+        raise ValueError("training.early_stopping_min_delta must be non-negative.")
     checkpoint = layout.checkpoints_dir / "best_orchid_model.pt"
-    for epoch in range(int(config["training"]["epochs"])):
+    for epoch in range(max_epochs):
         model.train()
         losses = []
-        for batch in loaders["train"]:
-            images, targets = batch[:2]
-            optimizer.zero_grad(set_to_none=True)
-            loss = _loss_for_batch(model, images.to(device), targets.to(device), criterion)
-            loss.backward()
-            optimizer.step()
-            losses.append(float(loss.item()))
+        with tqdm(
+            loaders["train"],
+            desc=f"Train Epoch {epoch + 1}/{max_epochs}",
+            unit=" batch",
+            dynamic_ncols=True,
+        ) as progress:
+            for batch in progress:
+                images, targets = batch[:2]
+                optimizer.zero_grad(set_to_none=True)
+                loss = _loss_for_batch(model, images.to(device), targets.to(device), criterion)
+                loss.backward()
+                optimizer.step()
+                batch_loss = float(loss.item())
+                losses.append(batch_loss)
+                progress.set_postfix(batch_loss=f"{batch_loss:.4f}", avg_loss=f"{np.mean(losses):.4f}")
         train_loss = float(np.mean(losses))
         val_loss = _mean_loss(model, loaders["val"], criterion, device)
         history["train"].append(train_loss)
         history["val"].append(val_loss)
-        if val_loss < best_loss:
+        if val_loss < best_loss - early_stopping_min_delta:
             best_loss = val_loss
+            epochs_without_improvement = 0
             save_orchid_checkpoint(checkpoint, model, metadata, epoch=epoch, monitored_metric=best_loss, optimizer=optimizer, history=history)
-        print(json.dumps({"epoch": epoch + 1, "train_loss": train_loss, "val_loss": val_loss, "best_val_loss": best_loss}))
+        else:
+            epochs_without_improvement += 1
+        logging.info(
+            json.dumps(
+                {
+                    "epoch": epoch + 1,
+                    "train_loss": train_loss,
+                    "val_loss": val_loss,
+                    "best_val_loss": best_loss,
+                    "early_stopping_wait": epochs_without_improvement,
+                    "early_stopping_patience": early_stopping_patience,
+                }
+            )
+        )
+        if epochs_without_improvement >= early_stopping_patience:
+            logging.info(
+                "Early stopping at epoch %s: validation loss did not improve by at least %s for %s consecutive epochs.",
+                epoch + 1,
+                early_stopping_min_delta,
+                early_stopping_patience,
+            )
+            break
     return checkpoint
 
 
@@ -248,7 +299,43 @@ def _ece(probabilities: np.ndarray, targets: np.ndarray, bins: int = 15) -> floa
     return float(result)
 
 
-def evaluate(config: Mapping[str, Any], checkpoint: str | Path, policy_path: str | Path, output_dir: str | Path | None = None) -> dict[str, float | int]:
+def _shot_stratified_metrics(
+    targets: np.ndarray,
+    predictions: np.ndarray,
+    train_class_counts: np.ndarray,
+    evaluation_config: Mapping[str, Any],
+) -> dict[str, float | int | None]:
+    """Report species metrics by frozen training-set frequency strata."""
+    strata_config = evaluation_config.get("shot_strata", {})
+    medium_minimum = int(strata_config.get("medium_min_train_images", 50))
+    many_minimum = int(strata_config.get("many_min_train_images", 100))
+    if medium_minimum < 1 or many_minimum <= medium_minimum:
+        raise ValueError("shot strata require 1 <= medium_min_train_images < many_min_train_images.")
+    result: dict[str, float | int | None] = {}
+    counts_per_example = train_class_counts[targets]
+    masks = {
+        "few": counts_per_example < medium_minimum,
+        "medium": (counts_per_example >= medium_minimum) & (counts_per_example < many_minimum),
+        "many": counts_per_example >= many_minimum,
+    }
+    for name, mask in masks.items():
+        count = int(mask.sum())
+        result[f"species_{name}_shot_n_test_images"] = count
+        if not count:
+            result[f"species_{name}_shot_top1_accuracy"] = None
+            result[f"species_{name}_shot_macro_f1"] = None
+            continue
+        stratum_targets = targets[mask]
+        stratum_predictions = predictions[mask]
+        labels = np.unique(stratum_targets)
+        result[f"species_{name}_shot_top1_accuracy"] = float(np.mean(stratum_predictions == stratum_targets))
+        result[f"species_{name}_shot_macro_f1"] = float(
+            f1_score(stratum_targets, stratum_predictions, labels=labels, average="macro", zero_division=0)
+        )
+    return result
+
+
+def evaluate(config: Mapping[str, Any], checkpoint: str | Path, policy_path: str | Path, output_dir: str | Path | None = None) -> dict[str, Any]:
     _, loaders, _ = _dataset_and_loaders(config)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, metadata, taxonomy = _load_model(checkpoint, device)
@@ -260,7 +347,29 @@ def evaluate(config: Mapping[str, Any], checkpoint: str | Path, policy_path: str
         torch.softmax(torch.as_tensor(row / policy.species_temperature), dim=0).numpy() for row in species_logits
     ])
     forced = probabilities.argmax(axis=1)
+    species_to_genus = np.asarray(taxonomy.species_to_genus, dtype=int)
+    genus_targets = species_to_genus[targets]
+    forced_genera = species_to_genus[forced]
+    implied_genus_probabilities = np.zeros((len(probabilities), len(taxonomy.genus_ids)), dtype=float)
+    for species_index, genus_index in enumerate(species_to_genus):
+        implied_genus_probabilities[:, genus_index] += probabilities[:, species_index]
+    if genus_logits is None:
+        genus_probabilities = implied_genus_probabilities
+        taxonomy_consistency_violation_rate = 0.0
+    else:
+        genus_probabilities = torch.softmax(torch.as_tensor(genus_logits), dim=1).numpy()
+        taxonomy_consistency_violation_rate = float(np.mean(genus_probabilities.argmax(axis=1) != forced_genera))
+    ranked_genera = np.argsort(-genus_probabilities, axis=1, kind="mergesort")
+    genus_top1 = ranked_genera[:, 0]
+    genus_top2 = ranked_genera[:, : min(2, len(taxonomy.genus_ids))]
+    train_class_counts = np.bincount(
+        np.asarray(loaders["train"].dataset.targets, dtype=int), minlength=len(taxonomy.species_ids)
+    )
+    shot_metrics = _shot_stratified_metrics(targets, forced, train_class_counts, config["evaluation"])
     accepted = [index for index, decision in enumerate(decisions) if decision["decision_level"] != "unknown"]
+    species_coverage = float(np.mean([decision["decision_level"] == "species" for decision in decisions]))
+    genus_coverage = float(np.mean([decision["decision_level"] == "genus" for decision in decisions]))
+    unknown_coverage = float(np.mean([decision["decision_level"] == "unknown" for decision in decisions]))
     correct = []
     rows = []
     for index, decision in enumerate(decisions):
@@ -270,8 +379,8 @@ def evaluate(config: Mapping[str, Any], checkpoint: str | Path, policy_path: str
         predicted_genus = taxonomy.genus_ids[int(decision["genus_index"])] if decision["genus_index"] is not None else ""
         is_correct = predicted_species == true_species or (decision["decision_level"] == "genus" and predicted_genus == true_genus)
         correct.append(is_correct)
-        rows.append({"image_file": image_paths[index], "true_species_id": true_species, "true_genus_id": true_genus, "forced_species_id": taxonomy.species_ids[int(forced[index])], "decision_level": decision["decision_level"], "predicted_species_id": predicted_species, "predicted_genus_id": predicted_genus, "confidence": decision["confidence"], "margin": decision["margin"], "hierarchically_correct": is_correct})
-    metrics: dict[str, float | int] = {
+        rows.append({"image_file": image_paths[index], "true_species_id": true_species, "true_genus_id": true_genus, "forced_species_id": taxonomy.species_ids[int(forced[index])], "forced_genus_id": taxonomy.genus_ids[int(forced_genera[index])], "genus_top1_id": taxonomy.genus_ids[int(genus_top1[index])], "decision_level": decision["decision_level"], "predicted_species_id": predicted_species, "predicted_genus_id": predicted_genus, "confidence": decision["confidence"], "margin": decision["margin"], "hierarchically_correct": is_correct})
+    metrics: dict[str, Any] = {
         "n_test_images": int(len(targets)),
         "species_top1_accuracy": float(np.mean(forced == targets)),
         "species_macro_f1": float(f1_score(targets, forced, average="macro", zero_division=0)),
@@ -282,15 +391,72 @@ def evaluate(config: Mapping[str, Any], checkpoint: str | Path, policy_path: str
         "nll_uncalibrated": float(-np.log(np.clip(probabilities[np.arange(len(targets)), targets], 1e-12, 1.0)).mean()),
         "nll_calibrated": float(-np.log(np.clip(calibrated_probabilities[np.arange(len(targets)), targets], 1e-12, 1.0)).mean()),
         "coverage": len(accepted) / len(targets),
+        "species_coverage": species_coverage,
+        "genus_coverage": genus_coverage,
+        "unknown_coverage": unknown_coverage,
+        "unknown_rate": unknown_coverage,
         "hierarchical_selective_accuracy": float(np.mean(correct)),
         "selective_hierarchical_accuracy": float(np.mean([correct[index] for index in accepted])) if accepted else 0.0,
-        "unknown_rate": 1.0 - len(accepted) / len(targets),
+        "genus_top1_accuracy": float(np.mean(genus_top1 == genus_targets)),
+        "genus_top2_accuracy": float(np.mean([target in ranked for target, ranked in zip(genus_targets, genus_top2)])),
+        "taxonomy_consistency_violation_rate": taxonomy_consistency_violation_rate,
+        **shot_metrics,
     }
     destination = Path(output_dir) if output_dir else Path(checkpoint).parents[1] / "reports"
     destination.mkdir(parents=True, exist_ok=True)
+    metrics["hAURC"] = hierarchical_aurc(rows)
+    with (destination / "risk_coverage.csv").open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=["coverage", "hierarchical_risk"])
+        writer.writeheader()
+        writer.writerows(risk_coverage_rows(rows))
     (destination / "metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     with (destination / "predictions.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+    # Reuse the standard model_compression metric exports for directly comparable
+    # figures and readable CSV/Markdown reports.
+    metric_dir = destination / "metrics"
+    metric_dir.mkdir(parents=True, exist_ok=True)
+    pipeline_metrics = calculate_metrics(targets, forced, probabilities)
+    report_metrics = {**pipeline_metrics, **metrics}
+    observed_class_ids = np.unique(targets)
+    observed_class_names = [taxonomy.species_ids[int(index)] for index in observed_class_ids]
+    confusion_class_ids = np.unique(np.concatenate((targets, forced)))
+    confusion_class_names = [taxonomy.species_ids[int(index)] for index in confusion_class_ids]
+    plot_metric_bar(pipeline_metrics, title="Test Metrics", save_path=str(metric_dir / "metrics.png"))
+    plot_confusion_matrix(
+        targets,
+        forced,
+        labels=confusion_class_names,
+        title="Confusion Matrix",
+        save_path=str(metric_dir / "confusion_matrix.png"),
+    )
+    plot_radar_chart(pipeline_metrics, save_path=str(metric_dir / "radar_chart.png"))
+    if len(observed_class_ids) >= 2:
+        observed_probabilities = probabilities[:, observed_class_ids]
+        plot_roc_auc_curve(
+            targets,
+            observed_probabilities,
+            observed_class_names,
+            title="ROC-AUC Curve",
+            save_path=str(metric_dir / "roc_auc.png"),
+        )
+        plot_calibration_curve(
+            targets,
+            observed_probabilities,
+            observed_class_names,
+            title="Calibration Curve",
+            save_path=str(metric_dir / "calibration.png"),
+        )
+    export_readable_metrics_report(
+        report_metrics,
+        targets,
+        forced,
+        probabilities,
+        str(metric_dir),
+        list(taxonomy.species_ids),
+        image_paths,
+    )
     return metrics

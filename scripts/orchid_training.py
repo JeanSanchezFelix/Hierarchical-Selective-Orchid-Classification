@@ -8,6 +8,7 @@ taxonomy and run provenance.
 from __future__ import annotations
 
 import copy
+import logging
 import random
 import sys
 from pathlib import Path
@@ -26,6 +27,7 @@ from model_compression.src.orchid.artifacts import OrchidArtifactLayout
 from model_compression.src.orchid.constants import TASK_FLAT_SPECIES, TASK_GENUS, TASK_GENUS_SPECIES, TASK_TARGET_GENUS
 from model_compression.src.train import transfer_learning
 from model_compression.src.utils.callbacks import process_callbacks
+from model_compression.src.utils.logging_setup import configure_logging
 from model_compression.src.utils.preprocessing import load_data
 
 
@@ -75,6 +77,8 @@ def run_training(config: dict[str, Any], artifact_root: str | Path = "artifacts/
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(int(seed))
     layout = OrchidArtifactLayout.create(artifact_root, config["experiment_id"])
+    configure_logging(enable_console=True, log_dir=str(layout.reports_dir))
+    logging.info("Starting Orchid training run: %s", config["experiment_id"])
     root_dir = Path(dataset_config["root_dir"]).expanduser().resolve()
     manifest = Path(dataset_config["split_manifest"]).expanduser().resolve()
     if not manifest.is_file():
@@ -125,27 +129,32 @@ def run_training(config: dict[str, Any], artifact_root: str | Path = "artifacts/
         }
     )
     callbacks = list(process_callbacks(callback_config).values())
-    transfer_learning(
-        model_name=training.get("model_name", "mobilenet_v2"),
-        data_loaders=loaders,
-        save_dir=str(layout.checkpoints_dir),
-        learning_rate=float(training.get("learning_rate", 0.001)),
-        num_epochs=int(training.get("epochs", 10)),
-        criterion_name=training.get("criterion", "cross_entropy"),
-        optimizer_name=training.get("optimizer", "adam"),
-        callbacks=callbacks,
-        pretrained_weights_path=training.get("pretrained_weights"),
-        use_class_weights=bool(training.get("class_weights", False)),
-        orchid_checkpoint_path=str(layout.checkpoints_dir / "best_orchid_model.pt"),
-        orchid_checkpoint_metadata={
-            "task": dataset_config["task"],
-            "target_genus": dataset_config.get("target_genus"),
-            "class_labels": inventory.classes,
-            "model_name": training.get("model_name", "mobilenet_v2"),
-            "img_size": int(training.get("img_size", 224)),
-            "normalization": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
-            "taxonomy_path": str(layout.taxonomy_path),
-            "split_manifest": str(manifest),
-        },
-    )
+    try:
+        transfer_learning(
+            model_name=training.get("model_name", "mobilenet_v2"),
+            data_loaders=loaders,
+            save_dir=str(layout.checkpoints_dir),
+            learning_rate=float(training.get("learning_rate", 0.001)),
+            num_epochs=int(training.get("epochs", 10)),
+            criterion_name=training.get("criterion", "cross_entropy"),
+            optimizer_name=training.get("optimizer", "adam"),
+            callbacks=callbacks,
+            pretrained_weights_path=training.get("pretrained_weights"),
+            use_class_weights=bool(training.get("class_weights", False)),
+            orchid_checkpoint_path=str(layout.checkpoints_dir / "best_orchid_model.pt"),
+            orchid_checkpoint_metadata={
+                "task": dataset_config["task"],
+                "target_genus": dataset_config.get("target_genus"),
+                "class_labels": inventory.classes,
+                "model_name": training.get("model_name", "mobilenet_v2"),
+                "img_size": int(training.get("img_size", 224)),
+                "normalization": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+                "taxonomy_path": str(layout.taxonomy_path),
+                "split_manifest": str(manifest),
+            },
+        )
+    except Exception:
+        logging.exception("Orchid training failed: %s", config["experiment_id"])
+        raise
+    logging.info("Completed Orchid training run: %s", config["experiment_id"])
     return layout.experiment_dir

@@ -74,8 +74,9 @@ def _manifest_subsets(
         missing_columns = required - set(reader.fieldnames or ())
         if missing_columns:
             raise ValueError(f"Split manifest is missing columns: {sorted(missing_columns)}")
+        split_aliases = {"validation": "val"}
         for row_number, row in enumerate(reader, start=2):
-            split = (row.get("split") or "").strip()
+            split = split_aliases.get((row.get("split") or "").strip(), (row.get("split") or "").strip())
             if split not in indices:
                 raise ValueError(f"Unknown split '{split}' at manifest row {row_number}.")
             image_path = os.path.normcase(os.path.abspath(os.path.join(root, row["image_path"])))

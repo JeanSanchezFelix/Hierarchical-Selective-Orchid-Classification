@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -14,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from model_compression.src.orchid.experiment import calibrate, evaluate, load_paper_config, train
 from model_compression.src.orchid.models import TRAINABLE_METHODS
+from model_compression.src.utils.logging_setup import configure_logging
 
 
 def parser() -> argparse.ArgumentParser:
@@ -46,23 +48,30 @@ def main() -> None:
             config["method"].update({"species_loss": "balanced_softmax", "genus_weight": 1.0, "consistency_weight": 0.25})
     if args.experiment_id:
         config["experiment_id"] = f"{args.experiment_id.rstrip('/')}/{config['method']['id']}"
+    log_dir = Path(args.artifact_root) / config["experiment_id"] / f"seed-{config['training']['seed']}" / "reports"
+    configure_logging(enable_console=True, log_dir=str(log_dir))
+    logging.info("Starting paper experiment command=%s, method=%s, seed=%s", args.command, config["method"]["id"], config["training"]["seed"])
     checkpoint = Path(args.checkpoint) if args.checkpoint else None
-    if args.command in {"train", "all"}:
-        checkpoint = train(config, args.artifact_root)
-        print(f"checkpoint={checkpoint}")
-    if args.command == "train":
-        return
-    if checkpoint is None:
-        raise ValueError("--checkpoint is required for calibrate and evaluate.")
-    policy = Path(args.policy) if args.policy else None
-    if args.command in {"calibrate", "all"}:
-        policy = calibrate(config, checkpoint)
-        print(f"policy={policy}")
-    if args.command == "calibrate":
-        return
-    if policy is None:
-        raise ValueError("--policy is required for evaluate.")
-    print(json.dumps(evaluate(config, checkpoint, policy), indent=2, sort_keys=True))
+    try:
+        if args.command in {"train", "all"}:
+            checkpoint = train(config, args.artifact_root)
+            logging.info("checkpoint=%s", checkpoint)
+        if args.command == "train":
+            return
+        if checkpoint is None:
+            raise ValueError("--checkpoint is required for calibrate and evaluate.")
+        policy = Path(args.policy) if args.policy else None
+        if args.command in {"calibrate", "all"}:
+            policy = calibrate(config, checkpoint)
+            logging.info("policy=%s", policy)
+        if args.command == "calibrate":
+            return
+        if policy is None:
+            raise ValueError("--policy is required for evaluate.")
+        logging.info("evaluation_metrics=%s", json.dumps(evaluate(config, checkpoint, policy), sort_keys=True))
+    except Exception:
+        logging.exception("Paper experiment failed")
+        raise
 
 
 if __name__ == "__main__":

@@ -10,5 +10,5 @@ methods:
   - flat_hsc
   - dual_head
   - dual_head_taxonomy_hsc
-# Prediction files must use paths relative to the dataset root. The runner
-# verifies identical held-out rows before computing paired statistics.
+# Prediction paths may be absolute or relative; the runner canonicalizes them to
+# dataset-relative identities and verifies identical held-out rows before paired statistics.

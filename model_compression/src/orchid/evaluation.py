@@ -10,6 +10,7 @@ from typing import Mapping, Sequence
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from model_compression.src.utils.model_setup import setup_model
 from model_compression.src.utils.preprocessing import load_data
@@ -134,9 +135,10 @@ def evaluate_cascade(
     source_indices = list(test_loader.dataset.subset.indices)
     root_dataset = test_loader.dataset.subset.dataset
     image_folder = getattr(root_dataset, "dataset", root_dataset)
+    image_root = Path(root_dataset.rootDir).resolve()
     cursor = 0
     with torch.no_grad():
-        for batch in test_loader:
+        for batch in tqdm(test_loader, desc=f"Cascade top-{top_k} inference", unit=" batch", dynamic_ncols=True):
             inputs, target_indices = batch[:2]
             inputs = inputs.to(runtime_device)
             router_batch_logits = router_model(inputs).detach().cpu().numpy()
@@ -167,7 +169,7 @@ def evaluate_cascade(
                     joint_probability=decision.best_candidate_score,
                     is_unknown=decision.is_unknown,
                     unknown_reason=decision.reason,
-                    image_file=Path(image_folder.samples[source_indices[cursor + image_index]][0]).relative_to(root_dataset.rootDir).as_posix(),
+                    image_file=Path(image_folder.samples[source_indices[cursor + image_index]][0]).resolve().relative_to(image_root).as_posix(),
                     decision_level="unknown" if decision.is_unknown else "species",
                     confidence=decision.best_candidate_score,
                 ))

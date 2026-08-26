@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import logging
 from pathlib import Path
 import sys
 import yaml
@@ -14,6 +15,7 @@ if str(ROOT) not in sys.path:
 
 from datasets.TaxonomicOrchidDataset import TaxonomicOrchidDataset
 from model_compression.src.orchid.evaluation import evaluate_cascade
+from model_compression.src.utils.logging_setup import configure_logging
 from orchid_training import run_training, with_target_genus
 
 
@@ -29,6 +31,7 @@ def main() -> None:
         config["training"]["seed"] = args.seed
     seed = config["training"]["seed"]
     base_id = f"{config['experiment_id'].rstrip('/')}/cascade_models/seed-{seed}"
+    artifact_root = Path(args.artifact_root)
     router = copy.deepcopy(config)
     router["experiment_id"] = f"{base_id}/router"
     router["dataset"]["task"] = "genus"
@@ -41,15 +44,22 @@ def main() -> None:
         expert["dataset"]["task"] = "genus_species"
         if not args.skip_train:
             run_training(with_target_genus(expert, genus), args.artifact_root)
-    artifact_root = Path(args.artifact_root)
+    cascade_log_dir = artifact_root / config["experiment_id"] / "cascade_reports" / f"seed-{seed}"
+    configure_logging(enable_console=True, log_dir=str(cascade_log_dir))
+    logging.info("Starting cascade held-out evaluation for seed %s", seed)
     router_checkpoint = artifact_root / base_id / "router" / "checkpoints" / "best_orchid_model.pt"
     expert_checkpoints = {
         genus: artifact_root / base_id / "experts" / genus / "checkpoints" / "best_orchid_model.pt"
         for genus in inventory.classes
     }
-    for method, top_k in (("cascade_top1", 1), ("cascade_top2", 2)):
-        output = artifact_root / config["experiment_id"] / method / f"seed-{seed}" / "reports"
-        evaluate_cascade(router_checkpoint, expert_checkpoints, config["dataset"]["root_dir"], config["dataset"]["split_manifest"], output, top_k=top_k, batch_size=config["training"]["batch_size"])
+    try:
+        for method, top_k in (("cascade_top1", 1), ("cascade_top2", 2)):
+            output = artifact_root / config["experiment_id"] / method / f"seed-{seed}" / "reports"
+            evaluate_cascade(router_checkpoint, expert_checkpoints, config["dataset"]["root_dir"], config["dataset"]["split_manifest"], output, top_k=top_k, batch_size=config["training"]["batch_size"])
+    except Exception:
+        logging.exception("Cascade evaluation failed for seed %s", seed)
+        raise
+    logging.info("Completed cascade evaluation for seed %s", seed)
 
 
 if __name__ == "__main__":

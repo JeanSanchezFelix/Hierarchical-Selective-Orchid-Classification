@@ -10,12 +10,27 @@ from typing import Iterable, Mapping
 import numpy as np
 
 
+def _canonical_image_file(row: Mapping[str, str], source: str | Path) -> str:
+    """Return a dataset-relative image identity from either legacy path form."""
+    genus, species = row["true_species_id"].split("::", 1)
+    parts = Path(row["image_file"]).parts
+    expected_parent = (genus, species)
+    if len(parts) < 3 or tuple(parts[-3:-1]) != expected_parent:
+        raise ValueError(
+            f"{source} has an image_file that does not match its ground-truth species: "
+            f"{row['image_file']!r} versus {row['true_species_id']!r}."
+        )
+    return Path(*parts[-3:]).as_posix()
+
+
 def _read_predictions(path: str | Path) -> list[dict[str, str]]:
     with Path(path).open(newline="", encoding="utf-8") as stream:
         rows = list(csv.DictReader(stream))
     required = {"image_file", "true_species_id", "true_genus_id", "predicted_species_id", "predicted_genus_id"}
     if not rows or required - set(rows[0]):
         raise ValueError(f"{path} is not a paper prediction file; missing {sorted(required - set(rows[0]) if rows else required)}")
+    for row in rows:
+        row["image_file"] = _canonical_image_file(row, path)
     return rows
 
 

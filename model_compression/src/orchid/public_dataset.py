@@ -13,6 +13,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Mapping
 
+from tqdm import tqdm
+
 
 AWS_BUCKET_URL = "https://inaturalist-open-data.s3.amazonaws.com"
 REQUIRED_METADATA = ("observations.csv.gz", "photos.csv.gz", "taxa.csv.gz")
@@ -63,13 +65,37 @@ def _first(row: Mapping[str, str], *names: str) -> str:
     return ""
 
 
+def _resolve_metadata_files(directory: Path) -> dict[str, Path]:
+    """Find required metadata in either raw-download or extracted-archive layouts."""
+    locations = [directory, *(path for path in directory.iterdir() if path.is_dir())]
+    for location in locations:
+        files: dict[str, Path] = {}
+        for required in REQUIRED_METADATA:
+            uncompressed = required.removesuffix(".gz")
+            candidate = next(
+                (path for path in (location / required, location / uncompressed) if path.is_file()),
+                None,
+            )
+            if candidate is None:
+                break
+            files[required] = candidate
+        if len(files) == len(REQUIRED_METADATA):
+            return files
+    raise FileNotFoundError(f"Missing official metadata file(s): {', '.join(REQUIRED_METADATA)}")
+
+
 def _read_rows(path: Path) -> Iterator[dict[str, str]]:
+    """Stream CSV rows while reporting the current phase and row throughput."""
     opener = gzip.open if path.suffix == ".gz" else open
     with opener(path, "rt", newline="", encoding="utf-8") as stream:
         sample = stream.read(4096)
         stream.seek(0)
         dialect = csv.excel_tab if "\t" in sample else csv.excel
-        yield from csv.DictReader(stream, dialect=dialect)
+        rows = csv.DictReader(stream, dialect=dialect)
+        with tqdm(desc=f"Reading {path.name}", unit=" rows", dynamic_ncols=True) as progress:
+            for row in rows:
+                progress.update()
+                yield row
 
 
 def _stable_key(seed: int, value: str) -> str:
@@ -137,9 +163,7 @@ def select_from_aws_metadata(metadata_dir: str | Path, config: Mapping[str, obje
     species-level research-grade observations are retained in memory.
     """
     directory = Path(metadata_dir)
-    missing = [name for name in REQUIRED_METADATA if not (directory / name).is_file()]
-    if missing:
-        raise FileNotFoundError(f"Missing official metadata file(s): {', '.join(missing)}")
+    metadata_files = _resolve_metadata_files(directory)
 
     source = config["source"]
     selection = config["selection"]
@@ -147,7 +171,7 @@ def select_from_aws_metadata(metadata_dir: str | Path, config: Mapping[str, obje
     accepted_licenses = {_normalize_license(value) for value in source["accepted_photo_licenses"]}
     taxa: dict[str, tuple[str, str, str]] = {}
     family_id = ""
-    for row in _read_rows(directory / "taxa.csv.gz"):
+    for row in _read_rows(metadata_files["taxa.csv.gz"]):
         taxon_id = _first(row, "taxon_id", "id")
         name = _first(row, "name")
         rank = _first(row, "rank").casefold()
@@ -160,12 +184,17 @@ def select_from_aws_metadata(metadata_dir: str | Path, config: Mapping[str, obje
         raise ValueError(f"Could not find family {source['family_name']!r} in taxa.csv.gz.")
 
     eligible_taxa: dict[str, tuple[str, str]] = {}
+    skipped_nonbinomial_taxa = 0
     for taxon_id, (name, rank, ancestry) in taxa.items():
-        if rank == "species" and _is_descendant(ancestry, family_id):
+        if rank != "species" or not _is_descendant(ancestry, family_id):
+            continue
+        try:
             eligible_taxa[taxon_id] = _taxon_parts(name)
+        except ValueError:
+            skipped_nonbinomial_taxa += 1
 
     observations: dict[str, tuple[str, str, str, str]] = {}
-    for row in _read_rows(directory / "observations.csv.gz"):
+    for row in _read_rows(metadata_files["observations.csv.gz"]):
         observation_id = _first(row, "observation_uuid", "observation_id", "id")
         taxon_id = _first(row, "taxon_id")
         quality_grade = _first(row, "quality_grade").casefold()
@@ -176,7 +205,7 @@ def select_from_aws_metadata(metadata_dir: str | Path, config: Mapping[str, obje
     # Retain the primary compatible photo for each observation. The source may
     # contain several photos; one photo prevents within-observation leakage.
     chosen: dict[str, tuple[int, str, str, str, str]] = {}
-    for row in _read_rows(directory / "photos.csv.gz"):
+    for row in _read_rows(metadata_files["photos.csv.gz"]):
         observation_id = _first(row, "observation_uuid", "observation_id")
         if observation_id not in observations:
             continue
@@ -222,42 +251,64 @@ def select_from_aws_metadata(metadata_dir: str | Path, config: Mapping[str, obje
     maximum = int(selection["maximum_images_per_species"])
     observer_cap = int(selection["maximum_images_per_observer_per_species"])
     seed = int(selection["deterministic_selection_seed"])
-    eligible = [species_id for species_id, rows in candidates.items() if len(rows) >= minimum]
-    selected_species = sorted(eligible, key=lambda value: _stable_key(seed, f"species:{value}"))[: int(selection["target_species"])]
-    if len(selected_species) < int(selection["target_species"]):
-        raise ValueError(f"Only {len(selected_species)} species satisfy the minimum of {minimum} images.")
-
-    selected: list[PublicImageRecord] = []
-    for species_id in selected_species:
+    capped_candidates: dict[str, list[PublicImageRecord]] = {}
+    for species_id, rows in candidates.items():
         per_observer: Counter[str] = Counter()
-        kept = 0
-        for record in sorted(candidates[species_id], key=lambda value: _stable_key(seed, value.photo_id)):
+        kept: list[PublicImageRecord] = []
+        for record in sorted(rows, key=lambda value: _stable_key(seed, value.photo_id)):
             if per_observer[record.observer_id] >= observer_cap:
                 continue
-            selected.append(record)
+            kept.append(record)
             per_observer[record.observer_id] += 1
-            kept += 1
-            if kept == maximum:
+            if len(kept) == maximum:
                 break
-        if kept < minimum:
-            raise ValueError(f"Observer cap leaves {species_id} with {kept} images, below {minimum}.")
+        capped_candidates[species_id] = kept
 
+    eligible = [species_id for species_id, rows in capped_candidates.items() if len(rows) >= minimum]
+    selected_species = sorted(
+        eligible,
+        key=lambda value: (-len(capped_candidates[value]), _stable_key(seed, f"species:{value}")),
+    )[: int(selection["target_species"])]
+    target_species = int(selection["target_species"])
+    if len(selected_species) < target_species:
+        raise ValueError(
+            f"Only {len(selected_species)} species satisfy the minimum of {minimum} after applying the observer cap."
+        )
+
+    selected = [record for species_id in selected_species for record in capped_candidates[species_id]]
     target = int(selection["target_images"])
+    print(
+        f"Selection capacity after observer cap: {len(selected):,} images across "
+        f"{target_species:,} species (target: {target:,}).",
+        flush=True,
+    )
     if len(selected) < target:
-        raise ValueError(f"Selection contains {len(selected)} images, below target_images={target}.")
+        raise ValueError(
+            f"The {target_species} highest-capacity species provide only {len(selected)} images, "
+            f"below target_images={target}."
+        )
     if len(selected) > target:
         # Preserve every selected species while trimming only the global excess
         # deterministically. The minimum per species remains guaranteed.
         minimum_total = minimum * len(selected_species)
         if target < minimum_total:
             raise ValueError("target_images is smaller than the required species minimum total.")
-        selected = sorted(selected, key=lambda value: _stable_key(seed, f"image:{value.photo_id}"))[:target]
+        guaranteed: list[PublicImageRecord] = []
+        extras: list[PublicImageRecord] = []
+        for species_id in selected_species:
+            ordered = sorted(capped_candidates[species_id], key=lambda value: _stable_key(seed, value.photo_id))
+            guaranteed.extend(ordered[:minimum])
+            extras.extend(ordered[minimum:])
+        selected = guaranteed + sorted(extras, key=lambda value: _stable_key(seed, f"image:{value.photo_id}"))[
+            : target - len(guaranteed)
+        ]
         counts = Counter(record.species_id for record in selected)
         if any(count < minimum for count in counts.values()) or len(counts) != len(selected_species):
             raise ValueError("Global trimming violated the per-species minimum; increase target_images.")
 
     return sorted(selected, key=lambda value: value.relative_path), {
         "family_taxon_id": family_id,
+        "skipped_nonbinomial_taxa": skipped_nonbinomial_taxa,
         "candidate_species": len(eligible),
         "selected_species": len(selected_species),
         "selected_images": len(selected),

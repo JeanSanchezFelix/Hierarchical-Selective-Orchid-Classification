@@ -12,11 +12,15 @@ import argparse
 import csv
 import json
 import shutil
+import ssl
 import sys
+import threading
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+from tqdm import tqdm
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -39,6 +43,81 @@ def _metadata_url(name: str, snapshot: str | None) -> str:
     return f"{AWS_BUCKET_URL}/{name}"
 
 
+_CERTIFI_CONTEXT: ssl.SSLContext | None = None
+_CERTIFI_CONTEXT_LOCK = threading.Lock()
+_CERTIFI_FALLBACK_NOTIFIED = False
+
+
+def _certifi_context() -> ssl.SSLContext:
+    global _CERTIFI_CONTEXT
+    with _CERTIFI_CONTEXT_LOCK:
+        if _CERTIFI_CONTEXT is None:
+            import certifi
+
+            _CERTIFI_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+        return _CERTIFI_CONTEXT
+
+
+def _urlopen(url: str, *, timeout: int | None = None):
+    """Open an HTTPS URL, reusing certifi after an initial verification failure."""
+    global _CERTIFI_FALLBACK_NOTIFIED
+    if _CERTIFI_CONTEXT is not None:
+        return urllib.request.urlopen(url, timeout=timeout, context=_CERTIFI_CONTEXT)
+    try:
+        return urllib.request.urlopen(url, timeout=timeout)
+    except urllib.error.URLError as error:
+        if not isinstance(error.reason, ssl.SSLCertVerificationError):
+            raise
+        context = _certifi_context()
+        with _CERTIFI_CONTEXT_LOCK:
+            if not _CERTIFI_FALLBACK_NOTIFIED:
+                print("Default TLS verification failed; using certifi CA bundle.", file=sys.stderr)
+                _CERTIFI_FALLBACK_NOTIFIED = True
+        return urllib.request.urlopen(url, timeout=timeout, context=context)
+
+
+def _format_bytes(value: int | None) -> str:
+    if value is None:
+        return "unknown"
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    amount = float(value)
+    for unit in units:
+        if amount < 1024 or unit == units[-1]:
+            return f"{amount:.1f} {unit}"
+        amount /= 1024
+    return f"{amount:.1f} TiB"
+
+
+def _download_url(url: str, target: Path) -> None:
+    """Download one file atomically while showing byte-level progress."""
+    partial = target.with_suffix(target.suffix + ".part")
+    try:
+        with _urlopen(url) as response, partial.open("wb") as stream:
+            total = response.headers.get("Content-Length")
+            total_bytes = int(total) if total and total.isdigit() else None
+            free_bytes = shutil.disk_usage(target.parent).free
+            print(
+                f"Download size: {_format_bytes(total_bytes)}; "
+                f"free space at {target.parent}: {_format_bytes(free_bytes)}.",
+                flush=True,
+            )
+            with tqdm(
+                total=total_bytes,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                desc=f"Downloading {target.name}",
+                dynamic_ncols=True,
+            ) as progress:
+                while chunk := response.read(1024 * 1024):
+                    stream.write(chunk)
+                    progress.update(len(chunk))
+        partial.replace(target)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+
+
 def fetch_metadata(args: argparse.Namespace) -> None:
     destination = Path(args.metadata_dir)
     destination.mkdir(parents=True, exist_ok=True)
@@ -46,16 +125,26 @@ def fetch_metadata(args: argparse.Namespace) -> None:
         archive = destination / f"inaturalist-open-data-{args.snapshot}.tar.gz"
         if archive.exists() and not args.overwrite:
             raise FileExistsError(f"{archive} already exists; pass --overwrite to replace it.")
-        urllib.request.urlretrieve(_metadata_url("", args.snapshot), archive)
+        url = _metadata_url("", args.snapshot)
+        try:
+            _download_url(url, archive)
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                raise FileNotFoundError(
+                    f"Official metadata snapshot {args.snapshot!r} was not found: {url}. "
+                    "Choose a dated snapshot currently published by iNaturalist."
+                ) from error
+            raise
+        print(f"Extracting {archive.name}...", flush=True)
         shutil.unpack_archive(str(archive), str(destination))
-        print(f"Fetched and extracted {archive}")
+        print(f"Fetched and extracted {archive}", flush=True)
         return
     for name in REQUIRED_METADATA:
         target = destination / name
         if target.exists() and not args.overwrite:
             print(f"Keeping existing {target}")
             continue
-        urllib.request.urlretrieve(_metadata_url(name, None), target)
+        _download_url(_metadata_url(name, None), target)
         print(f"Fetched {target}")
 
 
@@ -70,20 +159,31 @@ def build_manifest(args: argparse.Namespace) -> None:
     print(json.dumps({"manifest_dir": str(manifest_dir), **verified}, sort_keys=True))
 
 
+def _image_url_variants(url: str) -> tuple[str, ...]:
+    """Return case variants for source extensions, which are case-sensitive on S3."""
+    prefix, separator, extension = url.rpartition(".")
+    if not separator:
+        return (url,)
+    return tuple(dict.fromkeys((url, f"{prefix}.{extension.upper()}")))
+
+
 def _download_one(row: dict[str, str], root: Path, overwrite: bool) -> tuple[str, str, str]:
     target = root / row["relative_path"]
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and not overwrite:
         return row["relative_path"], "existing", sha256_file(target)
     partial = target.with_suffix(target.suffix + ".part")
-    try:
-        with urllib.request.urlopen(row["source_url"], timeout=60) as response, partial.open("wb") as stream:
-            shutil.copyfileobj(response, stream)
-        partial.replace(target)
-        return row["relative_path"], "downloaded", sha256_file(target)
-    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as error:
-        partial.unlink(missing_ok=True)
-        return row["relative_path"], f"failed:{error}", ""
+    last_error: OSError | urllib.error.URLError | urllib.error.HTTPError | None = None
+    for source_url in _image_url_variants(row["source_url"]):
+        try:
+            with _urlopen(source_url, timeout=60) as response, partial.open("wb") as stream:
+                shutil.copyfileobj(response, stream)
+            partial.replace(target)
+            return row["relative_path"], "downloaded", sha256_file(target)
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError) as error:
+            last_error = error
+            partial.unlink(missing_ok=True)
+    return row["relative_path"], f"failed:{last_error}", ""
 
 
 def download_images(args: argparse.Namespace) -> None:
@@ -95,12 +195,17 @@ def download_images(args: argparse.Namespace) -> None:
     with manifest.open(newline="", encoding="utf-8") as stream:
         rows = list(csv.DictReader(stream))
     results: list[tuple[str, str, str]] = []
+    print(
+        f"Preparing {len(rows):,} image downloads; free space at {root}: "
+        f"{_format_bytes(shutil.disk_usage(root).free)}.",
+        flush=True,
+    )
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = [executor.submit(_download_one, row, root, args.overwrite) for row in rows]
-        for index, future in enumerate(as_completed(futures), start=1):
-            results.append(future.result())
-            if index == 1 or index % args.progress_every == 0:
-                print(f"Processed {index}/{len(rows)} images", flush=True)
+        with tqdm(total=len(rows), desc="Downloading images", unit=" image", dynamic_ncols=True) as progress:
+            for future in as_completed(futures):
+                results.append(future.result())
+                progress.update()
     checksums = root / config["outputs"]["manifest_directory"] / config["outputs"]["checksums"]
     with checksums.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream)
