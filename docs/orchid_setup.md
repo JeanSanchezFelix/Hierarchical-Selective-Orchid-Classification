@@ -92,6 +92,33 @@ predictions, and `reports/training.log` to
 `artifacts/orchid/$experiment/<method>/seed-<seed>/`. The log includes any
 Python traceback if that run fails.
 
+### Post-hoc HSC comparison
+
+`flat_hsc` is a post-hoc condition and must reuse the trained
+`flat_balanced_softmax` checkpoint. To regenerate the forced B1 reports and the
+HSC B2 reports without training, run:
+
+```bash
+for seed in 17 42 123; do
+  checkpoint="artifacts/orchid/${experiment}/flat_balanced_softmax/seed-${seed}/checkpoints/best_orchid_model.pt"
+
+  for method in flat_balanced_softmax flat_hsc; do
+    python scripts/run_orchid_experiment.py all \
+      --config configs/orchid/paper_experiment_template.yaml \
+      --dataset-root "$root" \
+      --split-manifest "$manifest" \
+      --experiment-id "$experiment" \
+      --method "$method" \
+      --seed "$seed" \
+      --checkpoint "$checkpoint"
+  done
+done
+```
+
+B1 reports contain `"hsc_enabled": false`; B2 reports contain
+`"hsc_enabled": true`. Rerun the paper-summary command after all six reports
+finish.
+
 ## 3. Run Both Cascade Controls
 
 This trains one router and every genus expert, then evaluates C1 top-1 and C2
@@ -143,6 +170,26 @@ Use host CPU only; do not call this Android performance. Audit every frozen
 condition. For a single model, pass one checkpoint. For cascades, pass the
 router plus every expert checkpoint; the report records the correct model count
 and inference-call count.
+
+Generate the complete 7-condition by 3-seed audit matrix (21 reports):
+
+```bash
+python scripts/audit_orchid_edge_matrix.py \
+  --experiment-root artifacts/orchid/public-50k/orchid-hsc-paper \
+  --output-dir artifacts/orchid/edge_audits/all_seeds \
+  --seeds 17 42 123 \
+  --warmup 10 \
+  --trials 50
+```
+
+The combined table is written to
+`artifacts/orchid/edge_audits/all_seeds/README.md`, with machine-readable rows
+in `edge_metrics.csv` and one JSON report per method and seed. Cascade package
+footprint includes the router and all 68 experts; latency uses a documented
+conservative proxy comprising the router and the largest one or two expert
+heads for top-1 or top-2 routing, respectively.
+
+To audit a single checkpoint instead, run:
 
 ```bash
 python scripts/audit_orchid_edge.py \
