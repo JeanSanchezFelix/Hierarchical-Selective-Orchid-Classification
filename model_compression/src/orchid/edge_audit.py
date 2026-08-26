@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import resource
 import time
 from pathlib import Path
 from typing import Any, Sequence
@@ -58,19 +59,45 @@ def audit_models(models: Sequence[torch.nn.Module], image_size: int, *, warmup: 
         "parameter_count": int(parameters),
         "host_cpu_latency_ms_p50": float(np.percentile(timings, 50)),
         "host_cpu_latency_ms_p95": float(np.percentile(timings, 95)),
+        "host_peak_rss_mb": float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0),
         "warmup_calls": warmup,
         "timed_calls": trials,
     }
 
 
-def checkpoint_audit(checkpoints: Sequence[str | Path], output: str | Path, *, warmup: int = 10, trials: int = 50) -> Path:
-    models_and_metadata = [load_auditable_model(checkpoint) for checkpoint in checkpoints]
+def checkpoint_audit(
+    checkpoints: Sequence[str | Path],
+    output: str | Path,
+    *,
+    runtime_checkpoints: Sequence[str | Path] | None = None,
+    runtime_selection: str = "all_packaged_models",
+    warmup: int = 10,
+    trials: int = 50,
+) -> Path:
+    """Audit package footprint and the models actually invoked per input."""
+    packaged_paths = [Path(path) for path in checkpoints]
+    runtime_paths = [Path(path) for path in (runtime_checkpoints or checkpoints)]
+    models_and_metadata = [load_auditable_model(checkpoint) for checkpoint in runtime_paths]
     image_sizes = {int(metadata["img_size"]) for _, metadata in models_and_metadata}
     if len(image_sizes) != 1:
-        raise ValueError("All models in an edge condition must use the same input size.")
+        raise ValueError("All runtime models in an edge condition must use the same input size.")
     report = audit_models([model for model, _ in models_and_metadata], image_sizes.pop(), warmup=warmup, trials=trials)
-    report["checkpoint_bytes"] = int(sum(os.path.getsize(path) for path in checkpoints))
-    report["checkpoints"] = [str(Path(path)) for path in checkpoints]
+    packaged_parameter_count = 0
+    for checkpoint in packaged_paths:
+        bundle = load_orchid_checkpoint(checkpoint, map_location="cpu")
+        packaged_parameter_count += sum(
+            tensor.numel()
+            for name, tensor in bundle["model_state_dict"].items()
+            if not name.endswith(("running_mean", "running_var", "num_batches_tracked"))
+        )
+    report["runtime_parameter_count"] = report["parameter_count"]
+    report["parameter_count"] = int(packaged_parameter_count)
+    report["model_files"] = len(packaged_paths)
+    report["neural_inference_calls_per_input"] = len(runtime_paths)
+    report["runtime_selection"] = runtime_selection
+    report["checkpoint_bytes"] = int(sum(os.path.getsize(path) for path in packaged_paths))
+    report["checkpoints"] = [str(path) for path in packaged_paths]
+    report["runtime_checkpoints"] = [str(path) for path in runtime_paths]
     destination = Path(output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")

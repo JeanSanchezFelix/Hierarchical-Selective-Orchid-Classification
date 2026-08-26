@@ -186,3 +186,26 @@ def hierarchical_decisions(
         else:
             decisions.append({"decision_level": "unknown", "species_index": None, "genus_index": None, "confidence": max(species_probability, genus_probability), "margin": margin})
     return decisions
+
+
+def forced_species_decisions(
+    species_logits: np.ndarray,
+    taxonomy: OrchidTaxonomyIndex,
+    policy: HierarchicalSelectivePolicy,
+) -> list[dict[str, object]]:
+    """Return calibrated forced-species decisions for non-HSC baselines."""
+    probabilities = np.asarray([softmax(row / policy.species_temperature) for row in species_logits])
+    decisions: list[dict[str, object]] = []
+    for values in probabilities:
+        ranked = np.argsort(-values, kind="mergesort")
+        species_index = int(ranked[0])
+        decisions.append(
+            {
+                "decision_level": "species",
+                "species_index": species_index,
+                "genus_index": taxonomy.species_to_genus[species_index],
+                "confidence": float(values[species_index]),
+                "margin": float(values[ranked[0]] - values[ranked[1]]),
+            }
+        )
+    return decisions

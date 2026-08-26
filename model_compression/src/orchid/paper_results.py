@@ -15,12 +15,14 @@ def _canonical_image_file(row: Mapping[str, str], source: str | Path) -> str:
     genus, species = row["true_species_id"].split("::", 1)
     parts = Path(row["image_file"]).parts
     expected_parent = (genus, species)
-    if len(parts) < 3 or tuple(parts[-3:-1]) != expected_parent:
-        raise ValueError(
-            f"{source} has an image_file that does not match its ground-truth species: "
-            f"{row['image_file']!r} versus {row['true_species_id']!r}."
-        )
-    return Path(*parts[-3:]).as_posix()
+    if len(parts) >= 3 and tuple(parts[-3:-1]) == expected_parent:
+        return Path(*parts[-3:]).as_posix()
+    if len(parts) == 2 and parts[-2] == genus:
+        return Path(*parts).as_posix()
+    raise ValueError(
+        f"{source} has an image_file that does not match its ground-truth species: "
+        f"{row['image_file']!r} versus {row['true_species_id']!r}."
+    )
 
 
 def _read_predictions(path: str | Path) -> list[dict[str, str]]:

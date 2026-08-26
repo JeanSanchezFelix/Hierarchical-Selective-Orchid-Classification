@@ -4,6 +4,7 @@ import numpy as np
 
 from model_compression.src.orchid.calibration import (
     fit_hierarchical_selective_policy,
+    forced_species_decisions,
     hierarchical_decisions,
 )
 from model_compression.src.orchid.models import OrchidTaxonomyIndex
@@ -28,6 +29,12 @@ class HierarchicalCalibrationTests(unittest.TestCase):
         decisions = hierarchical_decisions(self.logits, self.taxonomy, policy, genus_logits)
         self.assertTrue(policy.uses_genus_head)
         self.assertEqual("species", decisions[0]["decision_level"])
+
+    def test_forced_species_decisions_never_abstain(self):
+        policy = fit_hierarchical_selective_policy(self.logits, self.targets, self.taxonomy)
+        decisions = forced_species_decisions(self.logits, self.taxonomy, policy)
+        self.assertTrue(all(decision["decision_level"] == "species" for decision in decisions))
+        self.assertTrue(all(decision["species_index"] is not None for decision in decisions))
 
 
 if __name__ == "__main__":

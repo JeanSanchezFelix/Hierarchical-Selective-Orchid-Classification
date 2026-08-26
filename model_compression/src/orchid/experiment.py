@@ -32,10 +32,11 @@ from model_compression.src.utils.metrics import (
 from model_compression.src.utils.preprocessing import load_data
 
 from .artifacts import OrchidArtifactLayout
-from .calibration import HierarchicalSelectivePolicy, fit_hierarchical_selective_policy, hierarchical_decisions
+from .calibration import HierarchicalSelectivePolicy, fit_hierarchical_selective_policy, forced_species_decisions, hierarchical_decisions
 from .checkpoints import load_orchid_checkpoint, save_orchid_checkpoint
 from .paper_results import hierarchical_aurc, risk_coverage_rows
 from .models import (
+    HSC_METHODS,
     BalancedSoftmaxLoss,
     CASCADE_METHODS,
     DUAL_HEAD_METHODS,
@@ -255,7 +256,7 @@ def _collect_logits(model: torch.nn.Module, loader: Any, device: torch.device) -
     image_folder = getattr(root_dataset, "dataset", root_dataset)
     cursor = 0
     with torch.no_grad():
-        for batch in loader:
+        for batch in tqdm(loader, desc="Inference", unit=" batch", dynamic_ncols=True):
             images, labels = batch[:2]
             output = model(images.to(device))
             if isinstance(output, tuple):
@@ -341,7 +342,12 @@ def evaluate(config: Mapping[str, Any], checkpoint: str | Path, policy_path: str
     model, metadata, taxonomy = _load_model(checkpoint, device)
     species_logits, targets, genus_logits, image_paths = _collect_logits(model, loaders["test"], device)
     policy = HierarchicalSelectivePolicy(**json.loads(Path(policy_path).read_text(encoding="utf-8")))
-    decisions = hierarchical_decisions(species_logits, taxonomy, policy, genus_logits)
+    hsc_enabled = config["method"]["id"] in HSC_METHODS
+    decisions = (
+        hierarchical_decisions(species_logits, taxonomy, policy, genus_logits)
+        if hsc_enabled
+        else forced_species_decisions(species_logits, taxonomy, policy)
+    )
     probabilities = np.asarray([torch.softmax(torch.as_tensor(row), dim=0).numpy() for row in species_logits])
     calibrated_probabilities = np.asarray([
         torch.softmax(torch.as_tensor(row / policy.species_temperature), dim=0).numpy() for row in species_logits
@@ -382,6 +388,7 @@ def evaluate(config: Mapping[str, Any], checkpoint: str | Path, policy_path: str
         rows.append({"image_file": image_paths[index], "true_species_id": true_species, "true_genus_id": true_genus, "forced_species_id": taxonomy.species_ids[int(forced[index])], "forced_genus_id": taxonomy.genus_ids[int(forced_genera[index])], "genus_top1_id": taxonomy.genus_ids[int(genus_top1[index])], "decision_level": decision["decision_level"], "predicted_species_id": predicted_species, "predicted_genus_id": predicted_genus, "confidence": decision["confidence"], "margin": decision["margin"], "hierarchically_correct": is_correct})
     metrics: dict[str, Any] = {
         "n_test_images": int(len(targets)),
+        "hsc_enabled": hsc_enabled,
         "species_top1_accuracy": float(np.mean(forced == targets)),
         "species_macro_f1": float(f1_score(targets, forced, average="macro", zero_division=0)),
         "species_balanced_recall": float(recall_score(targets, forced, average="macro", zero_division=0)),

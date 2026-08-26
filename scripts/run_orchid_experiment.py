@@ -14,7 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from model_compression.src.orchid.experiment import calibrate, evaluate, load_paper_config, train
-from model_compression.src.orchid.models import TRAINABLE_METHODS
+from model_compression.src.orchid.models import METHOD_FLAT_BALANCED_SOFTMAX, METHOD_FLAT_HSC, TRAINABLE_METHODS
 from model_compression.src.utils.logging_setup import configure_logging
 
 
@@ -52,23 +52,42 @@ def main() -> None:
     configure_logging(enable_console=True, log_dir=str(log_dir))
     logging.info("Starting paper experiment command=%s, method=%s, seed=%s", args.command, config["method"]["id"], config["training"]["seed"])
     checkpoint = Path(args.checkpoint) if args.checkpoint else None
+    run_dir = Path(args.artifact_root) / config["experiment_id"] / f"seed-{config['training']['seed']}"
+    if config["method"]["id"] == METHOD_FLAT_HSC and checkpoint is None:
+        matrix_root = Path(config["experiment_id"]).parent
+        checkpoint = (
+            Path(args.artifact_root)
+            / matrix_root
+            / METHOD_FLAT_BALANCED_SOFTMAX
+            / f"seed-{config['training']['seed']}"
+            / "checkpoints"
+            / "best_orchid_model.pt"
+        )
     try:
         if args.command in {"train", "all"}:
-            checkpoint = train(config, args.artifact_root)
-            logging.info("checkpoint=%s", checkpoint)
+            if config["method"]["id"] == METHOD_FLAT_HSC:
+                if args.command == "train":
+                    raise ValueError("flat_hsc is post-hoc; use 'all' to reuse a flat_balanced_softmax checkpoint.")
+                logging.info("Reusing Balanced Softmax checkpoint for post-hoc HSC: %s", checkpoint)
+            elif args.checkpoint:
+                logging.info("Reusing supplied checkpoint without training: %s", checkpoint)
+            else:
+                checkpoint = train(config, args.artifact_root)
+                logging.info("checkpoint=%s", checkpoint)
         if args.command == "train":
             return
         if checkpoint is None:
             raise ValueError("--checkpoint is required for calibrate and evaluate.")
         policy = Path(args.policy) if args.policy else None
         if args.command in {"calibrate", "all"}:
-            policy = calibrate(config, checkpoint)
+            policy = calibrate(config, checkpoint, output=run_dir / "reports" / "hierarchical_policy.json")
             logging.info("policy=%s", policy)
         if args.command == "calibrate":
             return
         if policy is None:
             raise ValueError("--policy is required for evaluate.")
-        logging.info("evaluation_metrics=%s", json.dumps(evaluate(config, checkpoint, policy), sort_keys=True))
+        metrics = evaluate(config, checkpoint, policy, output_dir=run_dir / "reports")
+        logging.info("evaluation_metrics=%s", json.dumps(metrics, sort_keys=True))
     except Exception:
         logging.exception("Paper experiment failed")
         raise
