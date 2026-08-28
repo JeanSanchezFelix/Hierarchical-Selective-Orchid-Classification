@@ -68,6 +68,10 @@ trains, calibrates, and evaluates one condition for one seed.
 ```bash
 set -euo pipefail
 
+# Required for reproducible CUDA matrix multiplications when PyTorch strict
+# deterministic algorithms are enabled by the paper runner.
+export CUBLAS_WORKSPACE_CONFIG=:4096:8
+
 root="data/orchidaceae-inat-v1"
 manifest="${root}/manifests/split.csv"
 experiment="public-50k/orchid-hsc-paper"

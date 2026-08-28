@@ -145,6 +145,8 @@ is in [docs/orchid_public_dataset.md](docs/orchid_public_dataset.md).
 Run one experiment condition with `run_orchid_experiment.py`.
 
 ```bash
+export CUBLAS_WORKSPACE_CONFIG=:4096:8
+
 python scripts/run_orchid_experiment.py all \
     --config configs/orchid/paper_experiment_template.yaml \
     --dataset-root data/orchidaceae-inat-v1 \
