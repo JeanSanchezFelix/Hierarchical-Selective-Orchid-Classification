@@ -6,12 +6,17 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+# PyTorch must see this before it initializes CUDA/cuBLAS; the paper runner
+# enables strict deterministic algorithms during training.
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 from model_compression.src.orchid.experiment import calibrate, evaluate, load_paper_config, train
 from model_compression.src.orchid.models import METHOD_FLAT_BALANCED_SOFTMAX, METHOD_FLAT_HSC, TRAINABLE_METHODS

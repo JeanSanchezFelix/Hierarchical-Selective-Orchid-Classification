@@ -7,7 +7,7 @@ dataset, Android application, or physical-device claims.
 ## 0. One-Time Environment Setup
 
 ```bash
-cd /path/to/model-compression
+cd /path/to/Hierarchical-Selective-Orchid-Classification
 conda create -n orchid_edge python=3.12 -y
 conda activate orchid_edge
 python -m pip install --upgrade pip
@@ -67,6 +67,10 @@ trains, calibrates, and evaluates one condition for one seed.
 
 ```bash
 set -euo pipefail
+
+# Required for reproducible CUDA matrix multiplications when PyTorch strict
+# deterministic algorithms are enabled by the paper runner.
+export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
 root="data/orchidaceae-inat-v1"
 manifest="${root}/manifests/split.csv"
@@ -226,7 +230,7 @@ Run these commands from the separate manuscript repository.
 cd /path/to/WACV
 
 python tools/export_orchid_results_to_wacv.py \
-  --summary-dir /path/to/model-compression/artifacts/orchid/paper_summary \
+  --summary-dir /path/to/Hierarchical-Selective-Orchid-Classification/artifacts/orchid/paper_summary \
   --tex-output sec/generated_results.tex \
   --figure-output figures/hierarchical_risk_coverage.pdf
 
@@ -243,7 +247,7 @@ claims separate.
 ## 7. Run the Submission Gate
 
 ```bash
-cd /path/to/model-compression
+cd /path/to/Hierarchical-Selective-Orchid-Classification
 python scripts/validate_orchid_submission.py \
   --matrix configs/orchid/paper_matrix.yaml \
   --artifact-root artifacts/orchid \
